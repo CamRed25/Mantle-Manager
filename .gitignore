@@ -12,7 +12,6 @@
 .ccache/
 
 # Tool configs (machine-local)
-.github/
 .claude/
 
 # Governance / archive (not for version control)
