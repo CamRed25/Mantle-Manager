@@ -1,0 +1,21 @@
+
+
+# Cargo / build artifacts
+/target
+/build/
+*.deb
+*.flatpak
+
+# IDE / editor settings
+.vscode/
+.idea/
+.ccache/
+
+# Tool configs (machine-local)
+.github/
+.claude/
+
+# Governance / archive (not for version control)
+doa/
+mo2_linux_plugins_examples/
+path.md

@@ -1,0 +1,38 @@
+[package]
+name = "mantle_core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+once_cell.workspace = true
+semver.workspace = true
+xxhash-rust.workspace = true
+rayon.workspace = true
+libc.workspace = true
+nix.workspace = true
+notify.workspace = true
+steamlocate.workspace = true
+esplugin.workspace = true
+ba2.workspace = true
+libloading.workspace = true
+rhai.workspace = true
+rusqlite.workspace = true
+compress-tools.workspace = true
+tempfile = "3"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

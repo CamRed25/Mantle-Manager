@@ -1,0 +1,23 @@
+[package]
+name = "mantle_ui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mantle-manager"
+path = "src/main.rs"
+
+[dependencies]
+mantle_core = { path = "../mantle_core" }
+gtk4.workspace = true
+libadwaita.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
