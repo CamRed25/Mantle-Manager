@@ -13,6 +13,7 @@
 
 # Tool configs (machine-local)
 .claude/
+.github/copilot-instructions.md
 
 # Governance / archive (not for version control)
 doa/
