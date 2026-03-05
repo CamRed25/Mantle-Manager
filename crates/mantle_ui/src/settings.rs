@@ -179,11 +179,9 @@ pub fn apply_theme(theme: Theme) {
     manager.set_color_scheme(match theme {
         Theme::Auto => adw::ColorScheme::Default,
         Theme::Light | Theme::CatppuccinLatte => adw::ColorScheme::ForceLight,
-        Theme::Dark
-        | Theme::CatppuccinMocha
-        | Theme::Nord
-        | Theme::Skyrim
-        | Theme::Fallout => adw::ColorScheme::ForceDark,
+        Theme::Dark | Theme::CatppuccinMocha | Theme::Nord | Theme::Skyrim | Theme::Fallout => {
+            adw::ColorScheme::ForceDark
+        }
     });
 
     // 2. CSS palette override (empty string = remove any existing provider).
@@ -249,9 +247,7 @@ fn build_appearance_page(
         .build();
 
     // ── Color scheme ──────────────────────────────────────────────────────
-    let scheme_group = adw::PreferencesGroup::builder()
-        .title("Color Scheme")
-        .build();
+    let scheme_group = adw::PreferencesGroup::builder().title("Color Scheme").build();
 
     let model = gtk4::StringList::new(&[
         "System default",
@@ -283,9 +279,7 @@ fn build_appearance_page(
     page.add(&scheme_group);
 
     // ── Mod list display ──────────────────────────────────────────────────
-    let list_group = adw::PreferencesGroup::builder()
-        .title("Mod List")
-        .build();
+    let list_group = adw::PreferencesGroup::builder().title("Mod List").build();
 
     let compact_row = adw::SwitchRow::builder()
         .title("Compact layout")
@@ -350,10 +344,7 @@ fn build_paths_page(
         .build();
 
     // ── Mods directory ────────────────────────────────────────────────────
-    let mods_row = adw::EntryRow::builder()
-        .title("Mods directory")
-        .show_apply_button(true)
-        .build();
+    let mods_row = adw::EntryRow::builder().title("Mods directory").show_apply_button(true).build();
     mods_row.set_text(
         &shared
             .borrow()
@@ -425,10 +416,7 @@ fn build_paths_page(
 ///
 /// # Returns
 /// A fully-populated [`adw::PreferencesPage`].
-fn build_network_page(
-    shared: Rc<RefCell<AppSettings>>,
-    path: PathBuf,
-) -> adw::PreferencesPage {
+fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::PreferencesPage {
     let page = adw::PreferencesPage::builder()
         .title("Network")
         .icon_name("network-wireless-symbolic")
@@ -436,15 +424,11 @@ fn build_network_page(
 
     let group = adw::PreferencesGroup::builder()
         .title("Nexus Mods")
-        .description(
-            "Your personal API key is used to fetch mod metadata and NXM links.",
-        )
+        .description("Your personal API key is used to fetch mod metadata and NXM links.")
         .build();
 
     // ── API key ───────────────────────────────────────────────────────────
-    let key_row = adw::PasswordEntryRow::builder()
-        .title("API key")
-        .build();
+    let key_row = adw::PasswordEntryRow::builder().title("API key").build();
     // show_apply_button is an EntryRow property inherited by PasswordEntryRow.
     key_row.set_show_apply_button(true);
     key_row.set_text(&shared.borrow().network.nexus_api_key);

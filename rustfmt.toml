@@ -1,13 +1,12 @@
 # Mantle Manager — rustfmt configuration
 # Matches CODING_STANDARDS.md §1.3
+# Note: imports_granularity, group_imports, and trailing_comma are nightly-only;
+# they are omitted here so CI (stable rustfmt) does not diverge.
 edition = "2021"
 max_width = 100
 use_small_heuristics = "Default"
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
 reorder_imports = true
 reorder_modules = true
 newline_style = "Unix"
-trailing_comma = "Vertical"
 fn_call_width = 80
 chain_width = 80

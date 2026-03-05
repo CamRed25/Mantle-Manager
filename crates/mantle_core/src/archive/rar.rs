@@ -58,8 +58,9 @@ pub fn list_rar_files(path: &Path) -> Result<Vec<String>, MantleError> {
 pub fn extract_rar(path: &Path, dest: &Path) -> Result<(), MantleError> {
     let mut source = fs::File::open(path)
         .map_err(|e| MantleError::Archive(format!("cannot open rar {}: {e}", path.display())))?;
-    fs::create_dir_all(dest)
-        .map_err(|e| MantleError::Archive(format!("cannot create dest dir {}: {e}", dest.display())))?;
+    fs::create_dir_all(dest).map_err(|e| {
+        MantleError::Archive(format!("cannot create dest dir {}: {e}", dest.display()))
+    })?;
     uncompress_archive(&mut source, dest, Ownership::Ignore)
         .map_err(|e| MantleError::Archive(format!("rar extract error for {}: {e}", path.display())))
 }

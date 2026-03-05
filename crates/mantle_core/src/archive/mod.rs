@@ -104,9 +104,10 @@ fn list_files_sync(path: &Path) -> Result<Vec<String>, MantleError> {
         ArchiveFormat::Zip => zip::list_zip_files(path),
         ArchiveFormat::SevenZip => sevenz::list_sevenz_files(path),
         ArchiveFormat::Rar => rar::list_rar_files(path),
-        ArchiveFormat::Unknown => {
-            Err(MantleError::Archive(format!("unknown or unsupported archive format: {}", path.display())))
-        }
+        ArchiveFormat::Unknown => Err(MantleError::Archive(format!(
+            "unknown or unsupported archive format: {}",
+            path.display()
+        ))),
     }
 }
 
@@ -125,9 +126,10 @@ fn extract_archive_sync(path: &Path, dest: &Path) -> Result<(), MantleError> {
         ArchiveFormat::Zip => zip::extract_zip(path, dest),
         ArchiveFormat::SevenZip => sevenz::extract_sevenz(path, dest),
         ArchiveFormat::Rar => rar::extract_rar(path, dest),
-        ArchiveFormat::Unknown => {
-            Err(MantleError::Archive(format!("unknown or unsupported archive format: {}", path.display())))
-        }
+        ArchiveFormat::Unknown => Err(MantleError::Archive(format!(
+            "unknown or unsupported archive format: {}",
+            path.display()
+        ))),
     }
 }
 

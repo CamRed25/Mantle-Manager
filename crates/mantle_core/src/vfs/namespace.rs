@@ -34,8 +34,7 @@ static NAMESPACE_AVAILABLE: OnceCell<bool> = OnceCell::new();
 /// The result is cached after the first call.
 #[must_use]
 pub fn is_namespace_available() -> bool {
-    *NAMESPACE_AVAILABLE
-        .get_or_init(|| std::path::Path::new("/proc/self/ns/mnt").exists())
+    *NAMESPACE_AVAILABLE.get_or_init(|| std::path::Path::new("/proc/self/ns/mnt").exists())
 }
 
 // ─── Namespace entry ──────────────────────────────────────────────────────────

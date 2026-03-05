@@ -20,9 +20,7 @@
 //! - `path.md` item v
 
 use adw::prelude::*;
-use gtk4::{
-    Box as GtkBox, Label, ListBox, Orientation, ProgressBar, ScrolledWindow, Separator,
-};
+use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ProgressBar, ScrolledWindow, Separator};
 use libadwaita as adw;
 
 use crate::state::{AppState, DownloadEntry, DownloadState};
@@ -37,10 +35,7 @@ use crate::state::{AppState, DownloadEntry, DownloadState};
 /// # Parameters
 /// - `state`: Read-only application state snapshot.
 pub fn build(state: &AppState) -> GtkBox {
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     outer.append(&toolbar(state));
     outer.append(&Separator::new(Orientation::Horizontal));
@@ -190,10 +185,7 @@ fn section(
     entries: &[&DownloadEntry],
     row_fn: impl Fn(&DownloadEntry) -> gtk4::ListBoxRow,
 ) -> GtkBox {
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(6)
-        .build();
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
 
     let header = Label::new(Some(title));
     header.add_css_class("heading");
@@ -201,9 +193,7 @@ fn section(
     header.set_halign(gtk4::Align::Start);
     outer.append(&header);
 
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for entry in entries {
@@ -242,10 +232,7 @@ fn render_in_progress_row(entry: &DownloadEntry) -> gtk4::ListBoxRow {
         .build();
 
     // Name row + cancel button
-    let top = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
+    let top = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
 
     let name = Label::new(Some(&entry.name));
     name.set_hexpand(true);
@@ -266,10 +253,7 @@ fn render_in_progress_row(entry: &DownloadEntry) -> gtk4::ListBoxRow {
     content.append(&top);
 
     // Progress bar + percentage
-    let prog_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
+    let prog_row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
 
     let bar = ProgressBar::new();
     bar.set_fraction(progress);
@@ -337,10 +321,7 @@ fn render_failed_row(entry: &DownloadEntry) -> gtk4::ListBoxRow {
         .margin_end(12)
         .build();
 
-    let top = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
+    let top = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
 
     let name = Label::new(Some(&entry.name));
     name.set_hexpand(true);

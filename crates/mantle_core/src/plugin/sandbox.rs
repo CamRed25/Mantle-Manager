@@ -61,11 +61,11 @@ pub struct SandboxConfig {
 impl Default for SandboxConfig {
     fn default() -> Self {
         Self {
-            max_operations:       Some(1_000_000),
+            max_operations: Some(1_000_000),
             max_call_stack_depth: Some(64),
-            max_string_size:      Some(65_536),
-            max_array_size:       Some(1_024),
-            max_map_size:         Some(1_024),
+            max_string_size: Some(65_536),
+            max_array_size: Some(1_024),
+            max_map_size: Some(1_024),
         }
     }
 }
@@ -138,7 +138,7 @@ mod tests {
 
     fn limited_engine(max_ops: u64, max_depth: usize) -> Engine {
         build_sandboxed_engine(&SandboxConfig {
-            max_operations:       Some(max_ops),
+            max_operations: Some(max_ops),
             max_call_stack_depth: Some(max_depth),
             ..SandboxConfig::default()
         })

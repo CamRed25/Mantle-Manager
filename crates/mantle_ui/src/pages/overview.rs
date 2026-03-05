@@ -69,10 +69,7 @@ fn hero_card(state: &AppState) -> GtkBox {
     title.set_halign(gtk4::Align::Start);
     info.append(&title);
 
-    let meta = Label::new(Some(&format!(
-        "{} · Steam · Proton",
-        state.game_version
-    )));
+    let meta = Label::new(Some(&format!("{} · Steam · Proton", state.game_version)));
     meta.add_css_class("caption");
     meta.add_css_class("dim-label");
     meta.set_halign(gtk4::Align::Start);
@@ -85,19 +82,10 @@ fn hero_card(state: &AppState) -> GtkBox {
         .margin_top(8)
         .build();
 
-    stats_row.append(&stat_label(
-        &format!("{} mods", state.mod_count),
-        false,
-    ));
-    stats_row.append(&stat_label(
-        &format!("{} plugins", state.plugin_count),
-        false,
-    ));
+    stats_row.append(&stat_label(&format!("{} mods", state.mod_count), false));
+    stats_row.append(&stat_label(&format!("{} plugins", state.plugin_count), false));
     if state.conflict_count > 0 {
-        stats_row.append(&stat_label(
-            &format!("{} conflicts", state.conflict_count),
-            true,
-        ));
+        stats_row.append(&stat_label(&format!("{} conflicts", state.conflict_count), true));
     }
     stats_row.append(&stat_label(&state.overlay_backend, false));
     info.append(&stats_row);
@@ -116,8 +104,7 @@ fn hero_card(state: &AppState) -> GtkBox {
     profile_btn.set_tooltip_text(Some("Switch profile"));
     right.append(&profile_btn);
 
-    let launch_btn =
-        gtk4::Button::with_label(&format!("▶  Launch {}", state.launch_target));
+    let launch_btn = gtk4::Button::with_label(&format!("▶  Launch {}", state.launch_target));
     launch_btn.add_css_class("suggested-action");
     launch_btn.set_tooltip_text(Some(&format!("Launch {}", state.launch_target)));
     right.append(&launch_btn);
@@ -153,9 +140,7 @@ fn mod_list_section(state: &AppState) -> GtkBox {
     let section = GtkBox::new(Orientation::Vertical, 8);
 
     // Section header row
-    let header_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .build();
+    let header_row = GtkBox::builder().orientation(Orientation::Horizontal).build();
 
     let title = Label::new(Some("Active Mods"));
     title.add_css_class("heading");
@@ -170,9 +155,7 @@ fn mod_list_section(state: &AppState) -> GtkBox {
     section.append(&header_row);
 
     // Mod rows
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::Single)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::Single).build();
     list.add_css_class("boxed-list");
 
     for entry in &state.mods {

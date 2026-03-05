@@ -382,9 +382,7 @@ fn parse_quoted_string(s: &str) -> Option<(String, &str)> {
 
 /// Decode a comma-separated hex byte sequence (possibly with embedded whitespace).
 fn parse_hex_bytes(s: &str) -> Vec<u8> {
-    s.split(',')
-        .filter_map(|tok| u8::from_str_radix(tok.trim(), 16).ok())
-        .collect()
+    s.split(',').filter_map(|tok| u8::from_str_radix(tok.trim(), 16).ok()).collect()
 }
 
 /// Normalise a registry key path for case-insensitive lookup.
@@ -547,10 +545,7 @@ mod tests {
     fn binary_value_decoded() {
         let h = hive();
         let val = h
-            .get_value(
-                r"System\ControlSet001\Control\ComputerName\ComputerName",
-                "BinaryData",
-            )
+            .get_value(r"System\ControlSet001\Control\ComputerName\ComputerName", "BinaryData")
             .unwrap();
         assert_eq!(val, &RegistryValue::Binary(vec![0xde, 0xad, 0xbe, 0xef]));
     }
@@ -561,10 +556,7 @@ mod tests {
     fn default_value_read_as_at_sign() {
         let h = hive();
         let val = h
-            .get_str(
-                r"System\ControlSet001\Control\ComputerName\ComputerName",
-                "@",
-            )
+            .get_str(r"System\ControlSet001\Control\ComputerName\ComputerName", "@")
             .unwrap();
         assert_eq!(val, "default-value");
     }
@@ -588,9 +580,9 @@ mod tests {
         let h = hive();
         let keys: Vec<&str> = h.keys().collect();
         assert!(keys.iter().any(|k| *k == r"software\valve\steam"));
-        assert!(keys.iter().any(|k| {
-            k.contains("windows nt") && k.contains("currentversion")
-        }));
+        assert!(keys
+            .iter()
+            .any(|k| { k.contains("windows nt") && k.contains("currentversion") }));
     }
 
     // ── continuation lines ────────────────────────────────────────────────────

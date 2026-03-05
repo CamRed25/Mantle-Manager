@@ -72,10 +72,7 @@ impl FileCategory {
             let m = marker.to_lowercase();
             // Match either as a path component in the absolute dir or as a
             // prefix segment in the normalised relative path.
-            if abs_lower.contains(&m)
-                || norm_path.starts_with(&format!("{m}/"))
-                || norm_path == m
-            {
+            if abs_lower.contains(&m) || norm_path.starts_with(&format!("{m}/")) || norm_path == m {
                 return true;
             }
         }
@@ -174,16 +171,8 @@ pub static CATEGORIES: &[FileCategory] = &[
         mod_target: "[Generated] DynDOLOD Output",
         description: "DynDOLOD / TexGen LOD generation output",
         dir_markers: &["DynDOLOD", "DynDOLOD_Output"],
-        prefix_patterns: &[
-            "dyndolod/",
-            "textures/terrain/",
-            "meshes/terrain/",
-        ],
-        suffix_patterns: &[
-            "dyndolod.esp",
-            "dyndolod.esm",
-            "dyndolod.esl",
-        ],
+        prefix_patterns: &["dyndolod/", "textures/terrain/", "meshes/terrain/"],
+        suffix_patterns: &["dyndolod.esp", "dyndolod.esm", "dyndolod.esl"],
         contains_patterns: &["dyndolod"],
         exact_matches: &[],
     },
@@ -260,11 +249,7 @@ pub static CATEGORIES: &[FileCategory] = &[
             "xedit backups/",
         ],
         suffix_patterns: &[],
-        contains_patterns: &[
-            ".esp.backup.",
-            ".esm.backup.",
-            ".esl.backup.",
-        ],
+        contains_patterns: &[".esp.backup.", ".esm.backup.", ".esl.backup."],
         exact_matches: &[],
     },
     FileCategory {
@@ -281,14 +266,7 @@ pub static CATEGORIES: &[FileCategory] = &[
             "mwse/",
             "sfse/",
         ],
-        suffix_patterns: &[
-            ".skse",
-            ".f4se",
-            ".nvse",
-            ".fose",
-            ".obse",
-            ".sfse",
-        ],
+        suffix_patterns: &[".skse", ".f4se", ".nvse", ".fose", ".obse", ".sfse"],
         contains_patterns: &[],
         exact_matches: &[],
     },
@@ -297,28 +275,17 @@ pub static CATEGORIES: &[FileCategory] = &[
         mod_target: "[Generated] ENB Config",
         description: "ENB / ReShade configuration and shader cache",
         dir_markers: &["enbseries", "reshade-shaders"],
-        prefix_patterns: &[
-            "enbseries/",
-            "reshade-shaders/",
-        ],
+        prefix_patterns: &["enbseries/", "reshade-shaders/"],
         suffix_patterns: &[],
         contains_patterns: &[],
-        exact_matches: &[
-            "enblocal.ini",
-            "enbseries.ini",
-            "reshade.ini",
-        ],
+        exact_matches: &["enblocal.ini", "enbseries.ini", "reshade.ini"],
     },
     FileCategory {
         name: "Crash Logs",
         mod_target: "[Generated] Crash Logs",
         description: "Game crash logs and diagnostic files",
         dir_markers: &["NetScriptFramework", "Trainwreck"],
-        prefix_patterns: &[
-            "netscriptframework/",
-            "trainwreck/",
-            "crash-",
-        ],
+        prefix_patterns: &["netscriptframework/", "trainwreck/", "crash-"],
         suffix_patterns: &[],
         contains_patterns: &["crashlog"],
         exact_matches: &["crash.txt"],
@@ -385,10 +352,7 @@ pub fn scan_overwrite_with_categories(
     let mut result = OverwriteScanResult::default();
     result.by_category.insert("Uncategorized".to_owned(), Vec::new());
     for cat in categories {
-        result
-            .by_category
-            .entry(cat.name.to_owned())
-            .or_default();
+        result.by_category.entry(cat.name.to_owned()).or_default();
     }
 
     if !overwrite_dir.is_dir() {
@@ -434,11 +398,7 @@ fn walk_dir(
     }
 }
 
-fn classify<'a>(
-    norm_path: &str,
-    abs_dir: &str,
-    categories: &'a [FileCategory],
-) -> &'a str {
+fn classify<'a>(norm_path: &str, abs_dir: &str, categories: &'a [FileCategory]) -> &'a str {
     for cat in categories {
         if cat.matches(norm_path, abs_dir) {
             return cat.name;
@@ -518,19 +478,13 @@ mod tests {
     #[test]
     fn crash_log_classified_correctly() {
         let dir = build_tree(&["crash-2024-01-01-00-00-00.txt"]);
-        assert_eq!(
-            category_of(&dir, "crash-2024-01-01-00-00-00.txt"),
-            "Crash Logs"
-        );
+        assert_eq!(category_of(&dir, "crash-2024-01-01-00-00-00.txt"), "Crash Logs");
     }
 
     #[test]
     fn xedit_backup_classified_correctly() {
         let dir = build_tree(&["MyPlugin.esp.backup.2024_01_01"]);
-        assert_eq!(
-            category_of(&dir, "MyPlugin.esp.backup.2024_01_01"),
-            "xEdit Backups"
-        );
+        assert_eq!(category_of(&dir, "MyPlugin.esp.backup.2024_01_01"), "xEdit Backups");
     }
 
     #[test]
@@ -567,11 +521,7 @@ mod tests {
 
     #[test]
     fn non_empty_categories_sorted() {
-        let dir = build_tree(&[
-            "DynDOLOD/x.esp",
-            "crash-2024.txt",
-            "random.dat",
-        ]);
+        let dir = build_tree(&["DynDOLOD/x.esp", "crash-2024.txt", "random.dat"]);
         let result = scan_overwrite(dir.path());
         let cats = result.non_empty_categories();
         assert!(cats.windows(2).all(|w| w[0] <= w[1]), "must be sorted");

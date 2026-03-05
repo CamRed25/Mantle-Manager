@@ -28,11 +28,8 @@ fn symlink_farm_mount_unmount_round_trip() {
         lower_dirs: vec![lower.path().to_owned()],
         merge_dir: merge.path().to_owned(),
     };
-    let handle = mantle_core::vfs::mount_with(
-        mantle_core::vfs::BackendKind::SymlinkFarm,
-        params,
-    )
-    .expect("symlink-farm mount must succeed");
+    let handle = mantle_core::vfs::mount_with(mantle_core::vfs::BackendKind::SymlinkFarm, params)
+        .expect("symlink-farm mount must succeed");
 
     assert_eq!(handle.backend_kind(), mantle_core::vfs::BackendKind::SymlinkFarm);
     assert!(
@@ -61,14 +58,10 @@ fn symlink_farm_conflict_winner_is_visible() {
         lower_dirs: vec![high.path().to_owned(), low.path().to_owned()],
         merge_dir: tempfile::TempDir::new().unwrap().keep(),
     };
-    let handle = mantle_core::vfs::mount_with(
-        mantle_core::vfs::BackendKind::SymlinkFarm,
-        params,
-    )
-    .expect("mount");
+    let handle = mantle_core::vfs::mount_with(mantle_core::vfs::BackendKind::SymlinkFarm, params)
+        .expect("mount");
 
-    let target =
-        std::fs::read_link(handle.merge_dir().join("shared.esp")).expect("read_link");
+    let target = std::fs::read_link(handle.merge_dir().join("shared.esp")).expect("read_link");
     assert!(
         target.starts_with(high.path()),
         "conflict winner must be the high-priority mod, got {target:?}"
@@ -86,14 +79,8 @@ fn mount_with_missing_lower_dir_returns_error() {
         lower_dirs: vec![std::path::PathBuf::from("/nonexistent/mod/dir")],
         merge_dir: merge.path().to_owned(),
     };
-    let result = mantle_core::vfs::mount_with(
-        mantle_core::vfs::BackendKind::SymlinkFarm,
-        params,
-    );
-    assert!(
-        result.is_err(),
-        "mount_with a missing lower dir must return Err"
-    );
+    let result = mantle_core::vfs::mount_with(mantle_core::vfs::BackendKind::SymlinkFarm, params);
+    assert!(result.is_err(), "mount_with a missing lower dir must return Err");
 }
 
 /// [`mount`] (auto-select) must succeed on every machine: if the auto-selected
@@ -201,11 +188,8 @@ fn fuse_overlayfs_mount_unmount_round_trip() {
         lower_dirs: vec![lower.path().to_owned()],
         merge_dir: merge.path().to_owned(),
     };
-    let handle = mantle_core::vfs::mount_with(
-        mantle_core::vfs::BackendKind::FuseOverlayfs,
-        params,
-    )
-    .expect("fuse-overlayfs mount must succeed");
+    let handle = mantle_core::vfs::mount_with(mantle_core::vfs::BackendKind::FuseOverlayfs, params)
+        .expect("fuse-overlayfs mount must succeed");
 
     assert!(merge.path().join("plugin.esp").exists());
     handle.unmount().expect("fuse-overlayfs unmount must succeed");

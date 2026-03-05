@@ -58,19 +58,16 @@ pub fn list_profile_mods(
         .map_err(MantleError::Database)?;
 
     let rows = stmt
-        .query_map(
-            rusqlite::named_params! { ":profile_id": profile_id },
-            |row| {
-                Ok(ProfileModEntry {
-                    mod_id: row.get(0)?,
-                    mod_slug: row.get(1)?,
-                    mod_name: row.get(2)?,
-                    priority: row.get(3)?,
-                    is_enabled: row.get::<_, i64>(4)? != 0,
-                    install_dir: row.get(5)?,
-                })
-            },
-        )
+        .query_map(rusqlite::named_params! { ":profile_id": profile_id }, |row| {
+            Ok(ProfileModEntry {
+                mod_id: row.get(0)?,
+                mod_slug: row.get(1)?,
+                mod_name: row.get(2)?,
+                priority: row.get(3)?,
+                is_enabled: row.get::<_, i64>(4)? != 0,
+                install_dir: row.get(5)?,
+            })
+        })
         .map_err(MantleError::Database)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(MantleError::Database)?;
@@ -140,8 +137,7 @@ pub fn remove_mod_from_profile(
     let entries = list_profile_mods(conn, profile_id)?;
     let before = entries.len();
 
-    let remaining: Vec<&ProfileModEntry> =
-        entries.iter().filter(|e| e.mod_id != mod_id).collect();
+    let remaining: Vec<&ProfileModEntry> = entries.iter().filter(|e| e.mod_id != mod_id).collect();
 
     if remaining.len() == before {
         return Ok(false);
@@ -320,10 +316,7 @@ pub fn mod_counts_per_profile(
         .collect::<Result<Vec<_>, _>>()
         .map_err(MantleError::Database)?;
 
-    Ok(pairs
-        .into_iter()
-        .map(|(id, n)| (id, usize::try_from(n).unwrap_or(0)))
-        .collect())
+    Ok(pairs.into_iter().map(|(id, n)| (id, usize::try_from(n).unwrap_or(0))).collect())
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
@@ -367,7 +360,14 @@ mod tests {
     }
 
     fn mk_profile(conn: &Connection) -> i64 {
-        insert_profile(conn, &InsertProfile { name: "Default", game_slug: None }).unwrap()
+        insert_profile(
+            conn,
+            &InsertProfile {
+                name: "Default",
+                game_slug: None,
+            },
+        )
+        .unwrap()
     }
 
     // ── list_profile_mods ────────────────────────────────────────────────────
@@ -680,7 +680,14 @@ mod tests {
     fn mod_counts_per_profile_returns_counts_for_all_profiles() {
         let conn = temp_conn();
         let p1 = mk_profile(&conn);
-        let p2 = insert_profile(&conn, &InsertProfile { name: "Second", game_slug: None }).unwrap();
+        let p2 = insert_profile(
+            &conn,
+            &InsertProfile {
+                name: "Second",
+                game_slug: None,
+            },
+        )
+        .unwrap();
 
         let a = mk_mod(&conn, "cnt-a");
         let b = mk_mod(&conn, "cnt-b");

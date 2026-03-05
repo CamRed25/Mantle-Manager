@@ -32,12 +32,15 @@ use rusqlite::Connection;
 
 use crate::{
     data::profiles::{
-        delete_profile as db_delete_profile, get_active_profile, get_profile_by_id,
-        insert_profile, set_active_profile, InsertProfile,
+        delete_profile as db_delete_profile, get_active_profile, get_profile_by_id, insert_profile,
+        set_active_profile, InsertProfile,
     },
     error::MantleError,
     mod_list::{add_mod_to_profile, list_profile_mods},
-    vfs::{backend::select_backend, cleanup::teardown_stale, mount::mount_with, types::MountParams, MountHandle},
+    vfs::{
+        backend::select_backend, cleanup::teardown_stale, mount::mount_with, types::MountParams,
+        MountHandle,
+    },
 };
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -176,9 +179,8 @@ pub fn activate_profile(
     // Tear down any overlay that may be lingering from a previous session or
     // from the currently active profile.  teardown_stale is a no-op when
     // nothing is mounted at game_data_dir.
-    teardown_stale(game_data_dir).map_err(|e| {
-        MantleError::Vfs(format!("stale mount teardown failed: {e}"))
-    })?;
+    teardown_stale(game_data_dir)
+        .map_err(|e| MantleError::Vfs(format!("stale mount teardown failed: {e}")))?;
 
     // Persist the activation in the DB *after* the VFS teardown so that
     // list_profile_mods below reads the new profile's mod list.

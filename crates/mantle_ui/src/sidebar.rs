@@ -51,10 +51,7 @@ fn downloads_section(state: &AppState) -> GtkBox {
     let (outer, inner) = section_box("Downloads");
 
     for dl in &state.downloads {
-        let item = GtkBox::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(10)
-            .build();
+        let item = GtkBox::builder().orientation(Orientation::Horizontal).spacing(10).build();
 
         let info_col = GtkBox::new(Orientation::Vertical, 2);
         info_col.set_hexpand(true);
@@ -115,9 +112,7 @@ fn downloads_section(state: &AppState) -> GtkBox {
 fn profiles_section(state: &AppState) -> GtkBox {
     let (outer, inner) = section_box("Profiles");
 
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for profile in &state.profiles {
@@ -174,9 +169,7 @@ fn overlay_section(state: &AppState) -> GtkBox {
     ];
 
     for (label_text, value_text) in rows {
-        let row = GtkBox::builder()
-            .orientation(Orientation::Horizontal)
-            .build();
+        let row = GtkBox::builder().orientation(Orientation::Horizontal).build();
 
         let lbl = Label::new(Some(label_text));
         lbl.add_css_class("caption");

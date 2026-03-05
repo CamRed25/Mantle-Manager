@@ -31,9 +31,8 @@ use tracing::{info, warn};
 use crate::{error::MantleError, game::GameInfo};
 
 use super::{
-    Capability, EventBus, ModInfo, MantlePlugin, PluginContext, PluginError, SettingValue,
-    native::load_native_plugin,
-    scripted::load_scripted_plugin,
+    native::load_native_plugin, scripted::load_scripted_plugin, Capability, EventBus, MantlePlugin,
+    ModInfo, PluginContext, PluginError, SettingValue,
 };
 
 // ─── plugin.toml manifest types ───────────────────────────────────────────────
@@ -197,7 +196,7 @@ impl PluginRegistry {
     #[must_use]
     pub fn new(event_bus: Arc<EventBus>, base_data_dir: impl Into<PathBuf>) -> Self {
         Self {
-            plugins:       Vec::new(),
+            plugins: Vec::new(),
             event_bus,
             base_data_dir: base_data_dir.into(),
         }
@@ -228,11 +227,11 @@ impl PluginRegistry {
     /// `{base_data_dir}/plugin-data/{plugin_id}/` as needed.
     pub fn load_dir(
         &mut self,
-        plugins_dir:    &Path,
-        mod_list:       &[ModInfo],
+        plugins_dir: &Path,
+        mod_list: &[ModInfo],
         active_profile: &str,
-        profiles:       &[String],
-        game:           Option<&GameInfo>,
+        profiles: &[String],
+        game: Option<&GameInfo>,
     ) -> Vec<PluginLoadError> {
         let mut errors: Vec<PluginLoadError> = Vec::new();
 
@@ -249,10 +248,7 @@ impl PluginRegistry {
                 .map(|e| e.path())
                 .filter(|p| {
                     p.is_file()
-                        && matches!(
-                            p.extension().and_then(|e| e.to_str()),
-                            Some("so" | "rhai")
-                        )
+                        && matches!(p.extension().and_then(|e| e.to_str()), Some("so" | "rhai"))
                 })
                 .collect(),
             Err(err) => {
@@ -267,9 +263,7 @@ impl PluginRegistry {
 
         // §6.1: alphabetical load order
         entries.sort_by(|a, b| {
-            a.file_name()
-                .unwrap_or_default()
-                .cmp(b.file_name().unwrap_or_default())
+            a.file_name().unwrap_or_default().cmp(b.file_name().unwrap_or_default())
         });
 
         // Track IDs already accepted → detect duplicates (§6.3).
@@ -383,19 +377,16 @@ impl PluginRegistry {
     #[allow(clippy::too_many_lines)]
     fn load_one(
         &self,
-        path:           &Path,
-        mod_list:       &[ModInfo],
+        path: &Path,
+        mod_list: &[ModInfo],
         active_profile: &str,
-        profiles:       &[String],
-        game:           Option<&GameInfo>,
-        seen_ids:       &mut HashMap<String, PathBuf>,
-        errors:         &mut Vec<PluginLoadError>,
+        profiles: &[String],
+        game: Option<&GameInfo>,
+        seen_ids: &mut HashMap<String, PathBuf>,
+        errors: &mut Vec<PluginLoadError>,
     ) -> Option<LoadedPlugin> {
         // ── 1. Load the binary/script ─────────────────────────────────────────
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
         let mut plugin: Box<dyn MantlePlugin> = match ext {
             "so" => match load_native_plugin(path) {
@@ -403,7 +394,7 @@ impl PluginRegistry {
                 Err(e) => {
                     warn!(path = %path.display(), error = %e, "native plugin load failed");
                     errors.push(PluginLoadError::LoadFailed {
-                        path:   path.to_owned(),
+                        path: path.to_owned(),
                         source: e,
                     });
                     return None;
@@ -414,7 +405,7 @@ impl PluginRegistry {
                 Err(e) => {
                     warn!(path = %path.display(), error = %e, "scripted plugin load failed");
                     errors.push(PluginLoadError::LoadFailed {
-                        path:   path.to_owned(),
+                        path: path.to_owned(),
                         source: e,
                     });
                     return None;
@@ -434,7 +425,7 @@ impl PluginRegistry {
                 "duplicate plugin ID — rejecting second occurrence"
             );
             errors.push(PluginLoadError::DuplicateId {
-                id:       plugin_id,
+                id: plugin_id,
                 existing: existing_path.clone(),
                 rejected: path.to_owned(),
             });
@@ -448,17 +439,11 @@ impl PluginRegistry {
         let capabilities = resolve_capabilities(&manifest, ext == "rhai");
 
         // ── 5. Initialise default settings from the plugin's declarations ──────
-        let settings: HashMap<String, SettingValue> = plugin
-            .settings()
-            .into_iter()
-            .map(|s| (s.key.to_owned(), s.default))
-            .collect();
+        let settings: HashMap<String, SettingValue> =
+            plugin.settings().into_iter().map(|s| (s.key.to_owned(), s.default)).collect();
 
         // ── 6. Create per-plugin data directory ───────────────────────────────
-        let plugin_data_dir = self
-            .base_data_dir
-            .join("plugin-data")
-            .join(&plugin_id);
+        let plugin_data_dir = self.base_data_dir.join("plugin-data").join(&plugin_id);
 
         if let Err(e) = std::fs::create_dir_all(&plugin_data_dir) {
             warn!(
@@ -496,7 +481,7 @@ impl PluginRegistry {
                     "plugin init() panicked — unloading"
                 );
                 errors.push(PluginLoadError::InitPanicked {
-                    path:    path.to_owned(),
+                    path: path.to_owned(),
                     message,
                 });
                 None
@@ -511,7 +496,7 @@ impl PluginRegistry {
                     "plugin init() returned error — unloading"
                 );
                 errors.push(PluginLoadError::InitFailed {
-                    path:   path.to_owned(),
+                    path: path.to_owned(),
                     source: plugin_err,
                 });
                 None
@@ -528,7 +513,7 @@ impl PluginRegistry {
                 Some(LoadedPlugin {
                     plugin,
                     context: ctx,
-                    path:    path.to_owned(),
+                    path: path.to_owned(),
                 })
             }
         }
@@ -757,13 +742,7 @@ mod tests {
         std::fs::create_dir_all(&plugins_dir).unwrap();
 
         let mut reg = make_registry();
-        let errors = reg.load_dir(
-            &plugins_dir,
-            &[],
-            "default",
-            &["default".to_owned()],
-            None,
-        );
+        let errors = reg.load_dir(&plugins_dir, &[], "default", &["default".to_owned()], None);
         assert!(errors.is_empty());
         assert_eq!(reg.plugin_count(), 0);
     }
@@ -786,7 +765,9 @@ mod tests {
         let so_path = temp.path().join("myplugin.so");
         let toml_path = temp.path().join("myplugin.toml");
         std::fs::write(&so_path, b"").unwrap();
-        std::fs::write(&toml_path, br#"
+        std::fs::write(
+            &toml_path,
+            br#"
 id = "myplugin"
 name = "My Plugin"
 version = "1.0.0"
@@ -795,7 +776,9 @@ description = "A test plugin."
 
 [capabilities]
 required = ["notifications"]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         let m = read_manifest(&so_path);
         assert_eq!(m.id.as_deref(), Some("myplugin"));
         assert_eq!(m.name.as_deref(), Some("My Plugin"));
@@ -838,13 +821,7 @@ required = ["notifications"]
         std::fs::write(plugins_dir.join("config.toml"), b"").unwrap();
 
         let mut reg = make_registry();
-        let errors = reg.load_dir(
-            &plugins_dir,
-            &[],
-            "default",
-            &["default".to_owned()],
-            None,
-        );
+        let errors = reg.load_dir(&plugins_dir, &[], "default", &["default".to_owned()], None);
         assert!(errors.is_empty());
         assert_eq!(reg.plugin_count(), 0);
     }

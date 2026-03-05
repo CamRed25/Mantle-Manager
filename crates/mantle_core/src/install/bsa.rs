@@ -96,9 +96,7 @@ pub fn extract_mod_archives(mod_dir: &Path, delete_after: bool) -> BsaExtractRes
     let mut result = BsaExtractResult::default();
 
     for archive in find_bsa_archives(mod_dir) {
-        let dest = archive
-            .parent()
-            .map_or_else(|| mod_dir.to_path_buf(), Path::to_path_buf);
+        let dest = archive.parent().map_or_else(|| mod_dir.to_path_buf(), Path::to_path_buf);
 
         match extract_one(&archive, &dest) {
             Ok(()) => {
@@ -120,10 +118,7 @@ pub fn extract_mod_archives(mod_dir: &Path, delete_after: bool) -> BsaExtractRes
                 result.extracted.push(archive);
             }
             Err(e) => {
-                tracing::warn!(
-                    "bsa_install: extraction failed for {}: {e}",
-                    archive.display()
-                );
+                tracing::warn!("bsa_install: extraction failed for {}: {e}", archive.display());
                 result.failed.push((archive, e.to_string()));
             }
         }
@@ -234,10 +229,8 @@ mod tests {
 
         let found = find_bsa_archives(dir.path());
         assert_eq!(found.len(), 3);
-        let names: Vec<&str> = found
-            .iter()
-            .map(|p| p.file_name().unwrap().to_str().unwrap())
-            .collect();
+        let names: Vec<&str> =
+            found.iter().map(|p| p.file_name().unwrap().to_str().unwrap()).collect();
         assert!(names[0] < names[1], "result must be sorted");
         assert!(names[1] < names[2], "result must be sorted");
     }

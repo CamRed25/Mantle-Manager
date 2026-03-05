@@ -27,11 +27,11 @@ use std::{ffi::CStr, path::Path, sync::Arc};
 use libloading::{Library, Symbol};
 use semver::Version;
 
-use crate::error::MantleError;
 use super::{
-    MantlePlugin, PluginContext, PluginError, PluginSetting,
-    PLUGIN_API_VERSION, RUSTC_TOOLCHAIN_VERSION,
+    MantlePlugin, PluginContext, PluginError, PluginSetting, PLUGIN_API_VERSION,
+    RUSTC_TOOLCHAIN_VERSION,
 };
+use crate::error::MantleError;
 
 // C-ABI function pointer types ------------------------------------------------
 
@@ -75,19 +75,31 @@ pub struct NativePlugin {
 impl std::fmt::Debug for NativePlugin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NativePlugin")
-            .field("id",      &self.plugin.id())
+            .field("id", &self.plugin.id())
             .field("version", &self.plugin.version().to_string())
             .finish_non_exhaustive()
     }
 }
 
 impl MantlePlugin for NativePlugin {
-    fn id(&self)          -> &str    { self.plugin.id() }
-    fn name(&self)        -> &str    { self.plugin.name() }
-    fn version(&self)     -> Version { self.plugin.version() }
-    fn author(&self)      -> &str    { self.plugin.author() }
-    fn description(&self) -> &str    { self.plugin.description() }
-    fn required_api_version(&self)   -> Version { self.plugin.required_api_version() }
+    fn id(&self) -> &str {
+        self.plugin.id()
+    }
+    fn name(&self) -> &str {
+        self.plugin.name()
+    }
+    fn version(&self) -> Version {
+        self.plugin.version()
+    }
+    fn author(&self) -> &str {
+        self.plugin.author()
+    }
+    fn description(&self) -> &str {
+        self.plugin.description()
+    }
+    fn required_api_version(&self) -> Version {
+        self.plugin.required_api_version()
+    }
 
     fn init(&mut self, ctx: Arc<PluginContext>) -> Result<(), PluginError> {
         self.plugin.init(ctx)
@@ -165,9 +177,8 @@ pub fn load_native_plugin(path: &Path) -> Result<NativePlugin, MantleError> {
     // Open the shared library.
     // SAFETY: dlopen is inherently unsafe — we trust the caller.
     let lib = unsafe {
-        Library::new(path).map_err(|e| {
-            MantleError::Plugin(format!("cannot load '{}': {e}", path.display()))
-        })?
+        Library::new(path)
+            .map_err(|e| MantleError::Plugin(format!("cannot load '{}': {e}", path.display())))?
     };
 
     // -- Rustc toolchain version guard ----------------------------------------
@@ -180,17 +191,20 @@ pub fn load_native_plugin(path: &Path) -> Result<NativePlugin, MantleError> {
     // is required by contract to return a null-terminated, statically-allocated
     // UTF-8 string that outlives the library.
     let plugin_rustc: &str = unsafe {
-        let sym: Symbol<RustcVersionFn> = lib
-            .get(b"create_plugin_rustc_version\0")
-            .map_err(|e| MantleError::Plugin(format!(
-                "'{}' is missing 'create_plugin_rustc_version': {e}", path.display()
-            )))?;
+        let sym: Symbol<RustcVersionFn> =
+            lib.get(b"create_plugin_rustc_version\0").map_err(|e| {
+                MantleError::Plugin(format!(
+                    "'{}' is missing 'create_plugin_rustc_version': {e}",
+                    path.display()
+                ))
+            })?;
         let ptr = sym();
-        CStr::from_ptr(ptr)
-            .to_str()
-            .map_err(|_| MantleError::Plugin(format!(
-                "'{}': rustc version string is not valid UTF-8", path.display()
-            )))?
+        CStr::from_ptr(ptr).to_str().map_err(|_| {
+            MantleError::Plugin(format!(
+                "'{}': rustc version string is not valid UTF-8",
+                path.display()
+            ))
+        })?
     };
 
     if plugin_rustc != RUSTC_TOOLCHAIN_VERSION {
@@ -207,15 +221,14 @@ pub fn load_native_plugin(path: &Path) -> Result<NativePlugin, MantleError> {
     // We check for null explicitly and then take ownership via `Box::from_raw`,
     // which is safe given the non-null check and the ownership contract.
     let plugin: Box<dyn MantlePlugin> = unsafe {
-        let sym: Symbol<CreatePluginFn> = lib
-            .get(b"create_plugin\0")
-            .map_err(|e| MantleError::Plugin(format!(
-                "'{}' is missing 'create_plugin': {e}", path.display()
-            )))?;
+        let sym: Symbol<CreatePluginFn> = lib.get(b"create_plugin\0").map_err(|e| {
+            MantleError::Plugin(format!("'{}' is missing 'create_plugin': {e}", path.display()))
+        })?;
         let raw = sym();
         if raw.is_null() {
             return Err(MantleError::Plugin(format!(
-                "'{}': create_plugin returned null", path.display()
+                "'{}': create_plugin returned null",
+                path.display()
             )));
         }
         Box::from_raw(raw)
@@ -265,9 +278,6 @@ mod tests {
     #[test]
     fn load_nonexistent_path_returns_error() {
         let result = load_native_plugin(Path::new("/nonexistent/plugin.so"));
-        assert!(
-            result.is_err(),
-            "expected an error for nonexistent path"
-        );
+        assert!(result.is_err(), "expected an error for nonexistent path");
     }
 }

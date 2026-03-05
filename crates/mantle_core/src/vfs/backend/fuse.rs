@@ -29,10 +29,7 @@ use crate::{error::MantleError, vfs::types::MountParams};
 /// Checks static well-known paths first, then `$HOME/.local/bin`, then falls
 /// back to invoking `which fuse-overlayfs`.
 fn find_fuse_overlayfs() -> Option<PathBuf> {
-    const WELL_KNOWN: &[&str] = &[
-        "/usr/bin/fuse-overlayfs",
-        "/usr/local/bin/fuse-overlayfs",
-    ];
+    const WELL_KNOWN: &[&str] = &["/usr/bin/fuse-overlayfs", "/usr/local/bin/fuse-overlayfs"];
     for &path in WELL_KNOWN {
         let p = Path::new(path);
         if p.exists() {
@@ -122,8 +119,7 @@ impl FuseOverlay {
     pub fn mount(params: &MountParams) -> Result<Self, MantleError> {
         let binary = find_fuse_overlayfs().ok_or_else(|| {
             MantleError::Vfs(
-                "fuse-overlayfs binary not found — install it or put it on PATH"
-                    .to_owned(),
+                "fuse-overlayfs binary not found — install it or put it on PATH".to_owned(),
             )
         })?;
 
@@ -149,7 +145,7 @@ impl FuseOverlay {
         let mount_options = format!(
             "lowerdir={lowerdir},upperdir={upper},workdir={work}",
             upper = upper_dir.path().display(),
-            work  = work_dir.path().display(),
+            work = work_dir.path().display(),
         );
 
         tracing::debug!(
@@ -165,9 +161,7 @@ impl FuseOverlay {
             .arg(&mount_options)
             .arg(&params.merge_dir)
             .spawn()
-            .map_err(|e| {
-                MantleError::Vfs(format!("failed to spawn {}: {e}", binary.display()))
-            })?;
+            .map_err(|e| MantleError::Vfs(format!("failed to spawn {}: {e}", binary.display())))?;
 
         std::thread::sleep(std::time::Duration::from_millis(150));
 
@@ -228,4 +222,3 @@ impl FuseOverlay {
         Ok(())
     }
 }
-

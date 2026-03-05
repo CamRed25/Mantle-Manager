@@ -72,4 +72,3 @@ pub use mount::{mount, mount_with, MountHandle};
 pub use namespace::{enter_mount_namespace, is_namespace_available};
 pub use stacking::{mount_stacked, StackedMount, STACK_TRIGGER};
 pub use types::MountParams;
-

@@ -61,11 +61,7 @@ fn sys_fsopen(fs_name: &str, flags: libc::c_int) -> Result<libc::c_int, MantleEr
 ///
 /// # Errors
 /// Returns [`MantleError::Vfs`] if the syscall fails.
-fn sys_fsconfig_set_string(
-    fd: libc::c_int,
-    key: &str,
-    value: &str,
-) -> Result<(), MantleError> {
+fn sys_fsconfig_set_string(fd: libc::c_int, key: &str, value: &str) -> Result<(), MantleError> {
     let key_c = CString::new(key)
         .map_err(|_| MantleError::Vfs(format!("fsconfig: invalid key '{key}'")))?;
     let val_c = CString::new(value)
@@ -136,10 +132,7 @@ fn sys_fsmount(
         )
     };
     if ret < 0 {
-        Err(MantleError::Vfs(format!(
-            "fsmount: {}",
-            std::io::Error::last_os_error()
-        )))
+        Err(MantleError::Vfs(format!("fsmount: {}", std::io::Error::last_os_error())))
     } else {
         libc::c_int::try_from(ret)
             .map_err(|_| MantleError::Vfs("fsmount: returned oversized fd".to_owned()))
@@ -276,9 +269,8 @@ impl KernelOverlay {
         let mntfd = fsmount_result?;
 
         let merge_str = params.merge_dir.to_string_lossy();
-        let move_result = sys_move_mount(
-            mntfd, "", libc::AT_FDCWD, &merge_str, MOVE_MOUNT_F_EMPTY_PATH,
-        );
+        let move_result =
+            sys_move_mount(mntfd, "", libc::AT_FDCWD, &merge_str, MOVE_MOUNT_F_EMPTY_PATH);
 
         // SAFETY: mntfd is a valid fd from fsmount.
         unsafe { libc::close(mntfd) };
@@ -286,7 +278,11 @@ impl KernelOverlay {
         move_result?;
 
         tracing::debug!("KernelOverlay: mounted at {}", params.merge_dir.display());
-        Ok(Self { upper_dir, work_dir, merge_dir: params.merge_dir.clone() })
+        Ok(Self {
+            upper_dir,
+            work_dir,
+            merge_dir: params.merge_dir.clone(),
+        })
     }
 
     /// Verify the kernel overlay is healthy (merge dir is a mount point).
@@ -311,9 +307,7 @@ impl KernelOverlay {
     /// Returns [`MantleError::Vfs`] if `umount2` fails.
     pub fn unmount(self) -> Result<(), MantleError> {
         nix::mount::umount2(&self.merge_dir, nix::mount::MntFlags::MNT_DETACH)
-            .map_err(|e| {
-                MantleError::Vfs(format!("umount2({}): {e}", self.merge_dir.display()))
-            })?;
+            .map_err(|e| MantleError::Vfs(format!("umount2({}): {e}", self.merge_dir.display())))?;
         // upper_dir and work_dir drop here → temp directories removed from disk.
         Ok(())
     }

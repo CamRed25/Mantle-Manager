@@ -21,19 +21,16 @@ use crate::error::MantleError;
 /// # Errors
 /// Returns [`MantleError::Io`] if `/proc/self/mountinfo` cannot be read.
 pub fn is_mounted(path: &Path) -> Result<bool, MantleError> {
-    let info =
-        std::fs::read_to_string("/proc/self/mountinfo").map_err(MantleError::Io)?;
+    let info = std::fs::read_to_string("/proc/self/mountinfo").map_err(MantleError::Io)?;
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_owned());
     let target = canonical.to_string_lossy();
 
     // mountinfo line format:
     //   ID parentID major:minor root mountpoint mountopts [optionals] '-' fstype source superopts
     // The mount point is field index 4 (0-based).
-    Ok(info.lines().any(|line| {
-        line.split_whitespace()
-            .nth(4)
-            .is_some_and(|mp| mp == target.as_ref())
-    }))
+    Ok(info
+        .lines()
+        .any(|line| line.split_whitespace().nth(4).is_some_and(|mp| mp == target.as_ref())))
 }
 
 /// Return the filesystem type of a mount at `path`, if present.
@@ -47,8 +44,7 @@ pub fn is_mounted(path: &Path) -> Result<bool, MantleError> {
 /// # Errors
 /// Returns [`MantleError::Io`] if `/proc/self/mountinfo` cannot be read.
 pub fn mount_fstype(path: &Path) -> Result<Option<String>, MantleError> {
-    let info =
-        std::fs::read_to_string("/proc/self/mountinfo").map_err(MantleError::Io)?;
+    let info = std::fs::read_to_string("/proc/self/mountinfo").map_err(MantleError::Io)?;
     let canonical = path.canonicalize().unwrap_or_else(|_| path.to_owned());
     let target = canonical.to_string_lossy();
 
@@ -111,12 +107,7 @@ pub fn teardown_stale(merge_dir: &Path) -> Result<bool, MantleError> {
     match fstype.as_deref() {
         Some("overlay") => {
             nix::mount::umount2(merge_dir, nix::mount::MntFlags::MNT_DETACH)
-                .map_err(|e| {
-                    MantleError::Vfs(format!(
-                        "umount2({}): {e}",
-                        merge_dir.display()
-                    ))
-                })?;
+                .map_err(|e| MantleError::Vfs(format!("umount2({}): {e}", merge_dir.display())))?;
         }
         // fuse-overlayfs reports "fuse.fuse-overlayfs" in mountinfo.
         Some("fuse.fuse-overlayfs" | "fuse") | None => {
@@ -125,10 +116,7 @@ pub fn teardown_stale(merge_dir: &Path) -> Result<bool, MantleError> {
                 .arg(merge_dir)
                 .status()
                 .or_else(|_| {
-                    std::process::Command::new("fusermount")
-                        .arg("-u")
-                        .arg(merge_dir)
-                        .status()
+                    std::process::Command::new("fusermount").arg("-u").arg(merge_dir).status()
                 })
                 .map_err(|e| MantleError::Vfs(format!("fusermount: {e}")))?;
 
@@ -169,10 +157,7 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let result = is_mounted(dir.path());
         assert!(result.is_ok(), "is_mounted must not error on a real dir");
-        assert!(
-            !result.unwrap(),
-            "a freshly created temp dir must not be a mount point"
-        );
+        assert!(!result.unwrap(), "a freshly created temp dir must not be a mount point");
     }
 
     /// `/proc` is always mounted — verify detection works for a real mount.

@@ -34,10 +34,7 @@ use crate::state::{AppState, PluginEntry, PluginSettingEntry};
 /// # Parameters
 /// - `state`: Read-only application state snapshot.
 pub fn build(state: &AppState) -> GtkBox {
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     outer.append(&toolbar(state));
 
@@ -95,9 +92,7 @@ fn empty_state() -> adw::StatusPage {
     adw::StatusPage::builder()
         .icon_name("application-x-executable-symbolic")
         .title("No Plugins Loaded")
-        .description(
-            "Drop a .so or .rhai file into the plugins folder to install a plugin.",
-        )
+        .description("Drop a .so or .rhai file into the plugins folder to install a plugin.")
         .vexpand(true)
         .build()
 }
@@ -135,9 +130,7 @@ fn plugin_scroll(state: &AppState) -> ScrolledWindow {
 /// # Parameters
 /// - `state`: Source of the plugins list.
 fn plugin_list(state: &AppState) -> ListBox {
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for entry in &state.plugins {
@@ -191,17 +184,13 @@ fn plugin_row(entry: &PluginEntry) -> adw::ExpanderRow {
     row.add_suffix(&toggle);
 
     // ── Description sub-row ───────────────────────────────────────────────────
-    let desc_row = adw::ActionRow::builder()
-        .title(&entry.description)
-        .build();
+    let desc_row = adw::ActionRow::builder().title(&entry.description).build();
     desc_row.add_css_class("property");
     row.add_row(&desc_row);
 
     // ── Settings sub-rows ─────────────────────────────────────────────────────
     if entry.settings.is_empty() {
-        let no_settings = adw::ActionRow::builder()
-            .title("No configurable settings")
-            .build();
+        let no_settings = adw::ActionRow::builder().title("No configurable settings").build();
         no_settings.set_sensitive(false);
         row.add_row(&no_settings);
     } else {
@@ -229,9 +218,7 @@ fn plugin_row(entry: &PluginEntry) -> adw::ExpanderRow {
 /// # Parameters
 /// - `setting`: The setting entry to display.
 fn setting_row(setting: &PluginSettingEntry) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
-        .title(&setting.label)
-        .build();
+    let row = adw::ActionRow::builder().title(&setting.label).build();
     // Widget name = setting key so item y can look up rows by key when
     // wiring live value changes (e.g. after an AdwDialog confirmation).
     row.set_widget_name(&setting.key);

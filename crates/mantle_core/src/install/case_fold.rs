@@ -95,9 +95,7 @@ impl NormalizeResult {
 pub fn normalize_dir(root: &Path, dry_run: bool, exclusions: &[&str]) -> NormalizeResult {
     let mut result = NormalizeResult::default();
     if !root.is_dir() {
-        result
-            .errors
-            .push((root.to_path_buf(), "not a directory".to_string()));
+        result.errors.push((root.to_path_buf(), "not a directory".to_string()));
         return result;
     }
     normalize_recursive(root, root, dry_run, exclusions, &mut result);
@@ -190,9 +188,7 @@ fn normalize_entries(
             // Record each pair; rename none.
             for (i, orig) in originals.iter().enumerate() {
                 let peer_idx = usize::from(i == 0);
-                result
-                    .collisions
-                    .push((parent.join(orig), parent.join(&originals[peer_idx])));
+                result.collisions.push((parent.join(orig), parent.join(&originals[peer_idx])));
             }
             continue;
         }
@@ -227,11 +223,7 @@ fn normalize_entries(
 /// case-only renames work even on case-insensitive filesystems where a direct
 /// `rename("Foo", "foo")` would be a no-op.
 fn rename_two_step(src: &Path, dst: &Path) -> std::io::Result<()> {
-    let orig_name = src
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
+    let orig_name = src.file_name().unwrap_or_default().to_string_lossy().into_owned();
     let tmp = src.with_file_name(format!("{orig_name}.__case_tmp__"));
     fs::rename(src, &tmp)?;
     fs::rename(&tmp, dst)
@@ -320,14 +312,8 @@ mod tests {
         // Should count what would be renamed
         assert!(result.total_renamed() > 0, "dry run must still count renames");
         // But originals must survive
-        assert!(
-            dir.path().join("Textures").exists(),
-            "Textures dir must survive dry run"
-        );
-        assert!(
-            dir.path().join("Textures/Wood.dds").exists(),
-            "Wood.dds must survive dry run"
-        );
+        assert!(dir.path().join("Textures").exists(), "Textures dir must survive dry run");
+        assert!(dir.path().join("Textures/Wood.dds").exists(), "Wood.dds must survive dry run");
     }
 
     // ── Collision detection ───────────────────────────────────────────────
@@ -373,10 +359,7 @@ mod tests {
 
     #[test]
     fn exclusion_does_not_affect_sibling_dirs() {
-        let dir = build_tree(&[
-            ("SKSE/Plugins/Foo.dll", b"dll"),
-            ("Meshes/Foo.nif", b"nif"),
-        ]);
+        let dir = build_tree(&[("SKSE/Plugins/Foo.dll", b"dll"), ("Meshes/Foo.nif", b"nif")]);
         let _ = normalize_dir(dir.path(), false, &["SKSE"]);
         assert!(dir.path().join("meshes/foo.nif").exists());
     }

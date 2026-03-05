@@ -196,17 +196,17 @@ impl EventFilter {
     #[must_use]
     pub fn matches(&self, event: &ModManagerEvent) -> bool {
         match self {
-            Self::All                => true,
-            Self::GameLaunching      => matches!(event, ModManagerEvent::GameLaunching(..)),
-            Self::GameExited         => matches!(event, ModManagerEvent::GameExited { .. }),
-            Self::ModInstalled       => matches!(event, ModManagerEvent::ModInstalled(..)),
-            Self::ModEnabled         => matches!(event, ModManagerEvent::ModEnabled(..)),
-            Self::ModDisabled        => matches!(event, ModManagerEvent::ModDisabled(..)),
-            Self::ProfileChanged     => matches!(event, ModManagerEvent::ProfileChanged { .. }),
-            Self::OverlayMounted     => matches!(event, ModManagerEvent::OverlayMounted { .. }),
-            Self::OverlayUnmounted   => matches!(event, ModManagerEvent::OverlayUnmounted { .. }),
-            Self::DownloadStarted    => matches!(event, ModManagerEvent::DownloadStarted { .. }),
-            Self::DownloadCompleted  => matches!(event, ModManagerEvent::DownloadCompleted { .. }),
+            Self::All => true,
+            Self::GameLaunching => matches!(event, ModManagerEvent::GameLaunching(..)),
+            Self::GameExited => matches!(event, ModManagerEvent::GameExited { .. }),
+            Self::ModInstalled => matches!(event, ModManagerEvent::ModInstalled(..)),
+            Self::ModEnabled => matches!(event, ModManagerEvent::ModEnabled(..)),
+            Self::ModDisabled => matches!(event, ModManagerEvent::ModDisabled(..)),
+            Self::ProfileChanged => matches!(event, ModManagerEvent::ProfileChanged { .. }),
+            Self::OverlayMounted => matches!(event, ModManagerEvent::OverlayMounted { .. }),
+            Self::OverlayUnmounted => matches!(event, ModManagerEvent::OverlayUnmounted { .. }),
+            Self::DownloadStarted => matches!(event, ModManagerEvent::DownloadStarted { .. }),
+            Self::DownloadCompleted => matches!(event, ModManagerEvent::DownloadCompleted { .. }),
             Self::ConflictMapUpdated => matches!(event, ModManagerEvent::ConflictMapUpdated { .. }),
         }
     }
@@ -216,7 +216,7 @@ impl EventFilter {
 
 /// Internal subscriber record.
 struct Subscriber {
-    filter:  EventFilter,
+    filter: EventFilter,
     handler: Arc<dyn Fn(&ModManagerEvent) + Send + Sync>,
 }
 
@@ -241,7 +241,7 @@ impl std::fmt::Debug for Subscriber {
 /// publisher or prevent other handlers from running.
 #[derive(Debug, Default)]
 pub struct EventBus {
-    next_id:     AtomicU64,
+    next_id: AtomicU64,
     subscribers: Mutex<HashMap<u64, Subscriber>>,
 }
 
@@ -273,10 +273,7 @@ impl EventBus {
         // Collect matching handler Arcs while holding the lock, then release
         // before invoking — avoids deadlock if a handler subscribes/unsubscribes.
         let handlers: Vec<HandlerFn> = {
-            let subs = self
-                .subscribers
-                .lock()
-                .expect("EventBus: subscriber lock poisoned");
+            let subs = self.subscribers.lock().expect("EventBus: subscriber lock poisoned");
             subs.values()
                 .filter(|s| s.filter.matches(event))
                 .map(|s| Arc::clone(&s.handler))
@@ -310,20 +307,22 @@ impl EventBus {
     ///
     /// # Returns
     /// A [`SubscriptionHandle`] whose `Drop` impl calls [`Self::unsubscribe`].
-    pub fn subscribe<F>(
-        self: &Arc<Self>,
-        filter: EventFilter,
-        handler: F,
-    ) -> SubscriptionHandle
+    pub fn subscribe<F>(self: &Arc<Self>, filter: EventFilter, handler: F) -> SubscriptionHandle
     where
         F: Fn(&ModManagerEvent) + Send + Sync + 'static,
     {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        self.subscribers
-            .lock()
-            .expect("EventBus: subscriber lock poisoned")
-            .insert(id, Subscriber { filter, handler: Arc::new(handler) });
-        SubscriptionHandle { id, bus: Arc::downgrade(self) }
+        self.subscribers.lock().expect("EventBus: subscriber lock poisoned").insert(
+            id,
+            Subscriber {
+                filter,
+                handler: Arc::new(handler),
+            },
+        );
+        SubscriptionHandle {
+            id,
+            bus: Arc::downgrade(self),
+        }
     }
 
     /// Remove a subscription by ID.
@@ -344,10 +343,7 @@ impl EventBus {
     /// Panics if the internal subscriber `Mutex` is poisoned.
     #[must_use]
     pub fn subscriber_count(&self) -> usize {
-        self.subscribers
-            .lock()
-            .expect("EventBus: subscriber lock poisoned")
-            .len()
+        self.subscribers.lock().expect("EventBus: subscriber lock poisoned").len()
     }
 }
 
@@ -375,7 +371,7 @@ impl EventBus {
 /// }
 /// ```
 pub struct SubscriptionHandle {
-    id:  u64,
+    id: u64,
     bus: Weak<EventBus>,
 }
 
@@ -405,8 +401,8 @@ impl std::fmt::Debug for SubscriptionHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
     use crate::game::GameKind;
+    use std::sync::atomic::AtomicUsize;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -415,7 +411,10 @@ mod tests {
     }
 
     fn profile_event() -> ModManagerEvent {
-        ModManagerEvent::ProfileChanged { old: "a".into(), new: "b".into() }
+        ModManagerEvent::ProfileChanged {
+            old: "a".into(),
+            new: "b".into(),
+        }
     }
 
     fn mod_info() -> ModInfo {
@@ -449,8 +448,14 @@ mod tests {
     fn filter_all_matches_every_variant() {
         let events = [
             ModManagerEvent::ModEnabled(mod_info()),
-            ModManagerEvent::ProfileChanged { old: "x".into(), new: "y".into() },
-            ModManagerEvent::ConflictMapUpdated { affected_mods: vec![], total_conflicts: 0 },
+            ModManagerEvent::ProfileChanged {
+                old: "x".into(),
+                new: "y".into(),
+            },
+            ModManagerEvent::ConflictMapUpdated {
+                affected_mods: vec![],
+                total_conflicts: 0,
+            },
             ModManagerEvent::GameLaunching(game_info()),
         ];
         for ev in &events {
@@ -460,7 +465,7 @@ mod tests {
 
     #[test]
     fn filter_specific_matches_only_own_variant() {
-        let ev_mod     = ModManagerEvent::ModEnabled(mod_info());
+        let ev_mod = ModManagerEvent::ModEnabled(mod_info());
         let ev_profile = profile_event();
 
         assert!(EventFilter::ModEnabled.matches(&ev_mod));
@@ -472,7 +477,7 @@ mod tests {
     #[test]
     fn filter_mod_installed_vs_enabled_are_distinct() {
         let installed = ModManagerEvent::ModInstalled(mod_info());
-        let enabled   = ModManagerEvent::ModEnabled(mod_info());
+        let enabled = ModManagerEvent::ModEnabled(mod_info());
         assert!(EventFilter::ModInstalled.matches(&installed));
         assert!(!EventFilter::ModInstalled.matches(&enabled));
     }
@@ -481,10 +486,10 @@ mod tests {
 
     #[test]
     fn subscribe_fires_handler_on_matching_event() {
-        let bus   = bus();
+        let bus = bus();
         let count = Arc::new(AtomicUsize::new(0));
-        let c     = Arc::clone(&count);
-        let _h    = bus.subscribe(EventFilter::ProfileChanged, move |_| {
+        let c = Arc::clone(&count);
+        let _h = bus.subscribe(EventFilter::ProfileChanged, move |_| {
             c.fetch_add(1, Ordering::Relaxed);
         });
 
@@ -494,10 +499,10 @@ mod tests {
 
     #[test]
     fn subscribe_does_not_fire_on_non_matching_event() {
-        let bus   = bus();
+        let bus = bus();
         let count = Arc::new(AtomicUsize::new(0));
-        let c     = Arc::clone(&count);
-        let _h    = bus.subscribe(EventFilter::GameLaunching, move |_| {
+        let c = Arc::clone(&count);
+        let _h = bus.subscribe(EventFilter::GameLaunching, move |_| {
             c.fetch_add(1, Ordering::Relaxed);
         });
 
@@ -507,9 +512,9 @@ mod tests {
 
     #[test]
     fn dropping_handle_unsubscribes() {
-        let bus   = bus();
+        let bus = bus();
         let count = Arc::new(AtomicUsize::new(0));
-        let c     = Arc::clone(&count);
+        let c = Arc::clone(&count);
 
         let handle = bus.subscribe(EventFilter::All, move |_| {
             c.fetch_add(1, Ordering::Relaxed);
@@ -524,7 +529,7 @@ mod tests {
 
     #[test]
     fn multiple_subscribers_all_fire() {
-        let bus   = bus();
+        let bus = bus();
         let count = Arc::new(AtomicUsize::new(0));
         let mut handles = vec![];
         for _ in 0..3 {
@@ -540,7 +545,7 @@ mod tests {
     #[test]
     fn panicking_handler_does_not_propagate() {
         let bus = bus();
-        let _h  = bus.subscribe(EventFilter::All, |_| panic!("intentional handler panic"));
+        let _h = bus.subscribe(EventFilter::All, |_| panic!("intentional handler panic"));
         // Must not propagate to the test thread.
         bus.publish(&profile_event());
     }
@@ -549,10 +554,10 @@ mod tests {
     fn handler_may_acquire_subscriber_count_without_deadlock() {
         // Regression: lock is released before calling handlers, so checking
         // subscriber_count() inside a handler must not deadlock.
-        let bus   = bus();
+        let bus = bus();
         let fired = Arc::new(AtomicUsize::new(0));
-        let f     = Arc::clone(&fired);
-        let _h    = bus.subscribe(EventFilter::ProfileChanged, move |_| {
+        let f = Arc::clone(&fired);
+        let _h = bus.subscribe(EventFilter::ProfileChanged, move |_| {
             f.fetch_add(1, Ordering::Relaxed);
         });
         bus.publish(&profile_event());

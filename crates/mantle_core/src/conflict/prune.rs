@@ -75,20 +75,14 @@ impl PruneResult {
 /// # Returns
 /// A [`PruneResult`] with full per-file outcomes.
 #[must_use]
-pub fn prune_losers(
-    conflict_map: &ConflictMap,
-    mods_dir: &Path,
-    backup_dir: &Path,
-) -> PruneResult {
+pub fn prune_losers(conflict_map: &ConflictMap, mods_dir: &Path, backup_dir: &Path) -> PruneResult {
     let mut result = PruneResult::default();
 
     for entry in conflict_map.all_entries() {
         for loser in &entry.losers {
             let src = mods_dir.join(loser).join(&entry.path);
             if !src.exists() {
-                result
-                    .skipped_missing
-                    .push((loser.clone(), entry.path.clone()));
+                result.skipped_missing.push((loser.clone(), entry.path.clone()));
                 continue;
             }
 
@@ -109,9 +103,7 @@ pub fn prune_losers(
             }
 
             if let Err(e) = std::fs::remove_file(&src) {
-                result
-                    .errors
-                    .push((src.clone(), format!("backup ok but remove failed: {e}")));
+                result.errors.push((src.clone(), format!("backup ok but remove failed: {e}")));
                 // Don't count as moved — file still exists at source.
                 continue;
             }
@@ -266,10 +258,7 @@ mod tests {
 
     #[test]
     fn backup_dir_created_automatically() {
-        let mods = build_mods_dir(&[
-            ("winner", "data/file.esp"),
-            ("loser", "data/file.esp"),
-        ]);
+        let mods = build_mods_dir(&[("winner", "data/file.esp"), ("loser", "data/file.esp")]);
         let parent = TempDir::new().unwrap();
         let backup = parent.path().join("deep/nested/backup");
         // backup does NOT exist yet

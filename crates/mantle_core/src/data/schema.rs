@@ -73,7 +73,8 @@ pub fn run_migrations(conn: &Connection) -> Result<(), MantleError> {
     }
 
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(pending_start) {
-        let migration_number = u32::try_from(i + 1).expect("migration index cannot exceed u32::MAX");
+        let migration_number =
+            u32::try_from(i + 1).expect("migration index cannot exceed u32::MAX");
         apply_migration_sql(conn, migration_number, sql)?;
     }
 

@@ -112,7 +112,9 @@ fn probe_fsopen() -> bool {
         // SAFETY: fd is a small non-negative integer from a successful syscall;
         // it always fits in c_int (i32) on all supported Linux targets.
         #[allow(clippy::cast_possible_truncation)]
-        unsafe { libc::close(fd as libc::c_int) };
+        unsafe {
+            libc::close(fd as libc::c_int)
+        };
         true
     } else {
         // ENOSYS → syscall not present; anything else → API present but lack perms.

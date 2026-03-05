@@ -43,15 +43,8 @@ use crate::state::{AppState, ProfileEntry};
 /// - `state`: Read-only application state snapshot.
 /// - `window`: Main application window; used as `transient_for` for dialogs.
 /// - `refresh`: Callback to trigger a full state reload after a DB mutation.
-pub fn build(
-    state: &AppState,
-    window: &adw::ApplicationWindow,
-    refresh: &Rc<dyn Fn()>,
-) -> GtkBox {
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
+pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn Fn()>) -> GtkBox {
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     outer.append(&toolbar(window, refresh));
     outer.append(&Separator::new(Orientation::Horizontal));
@@ -287,9 +280,7 @@ fn profile_list(
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
 ) -> ListBox {
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for entry in &state.profiles {
@@ -325,7 +316,11 @@ fn profile_row(
 ) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(&entry.name)
-        .subtitle(format!("{} mod{}", entry.mod_count, if entry.mod_count == 1 { "" } else { "s" }))
+        .subtitle(format!(
+            "{} mod{}",
+            entry.mod_count,
+            if entry.mod_count == 1 { "" } else { "s" }
+        ))
         .build();
 
     row.set_widget_name(&entry.id);
@@ -435,12 +430,18 @@ fn build_delete_button(
 ) -> gtk4::Button {
     let btn = gtk4::Button::builder()
         .icon_name("edit-delete-symbolic")
-        .tooltip_text(if is_active { "Cannot delete the active profile" } else { "Delete this profile" })
+        .tooltip_text(if is_active {
+            "Cannot delete the active profile"
+        } else {
+            "Delete this profile"
+        })
         .valign(gtk4::Align::Center)
         .build();
     btn.add_css_class("flat");
     btn.add_css_class("circular");
-    if !is_active { btn.add_css_class("error"); }
+    if !is_active {
+        btn.add_css_class("error");
+    }
     btn.set_sensitive(!is_active);
     btn.set_widget_name(&format!("delete-{profile_id}"));
 

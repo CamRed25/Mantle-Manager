@@ -32,13 +32,12 @@ use std::{
 use rhai::{Dynamic, Engine, FnPtr, Scope, AST};
 use semver::Version;
 
-use crate::error::MantleError;
+use super::sandbox::{build_sandboxed_engine, SandboxConfig};
 use super::{
-    EventFilter, ModManagerEvent, MantlePlugin, ModInfo, SubscriptionHandle,
-    PluginContext, PluginError, PluginSetting, NotifyLevel, SettingValue,
-    PLUGIN_API_VERSION,
+    EventFilter, MantlePlugin, ModInfo, ModManagerEvent, NotifyLevel, PluginContext, PluginError,
+    PluginSetting, SettingValue, SubscriptionHandle, PLUGIN_API_VERSION,
 };
-use super::sandbox::{SandboxConfig, build_sandboxed_engine};
+use crate::error::MantleError;
 
 // ─── Rhai context wrapper ────────────────────────────────────────────────────
 
@@ -51,7 +50,7 @@ use super::sandbox::{SandboxConfig, build_sandboxed_engine};
 /// The struct is [`Clone`] so Rhai can pass it by value across function calls.
 #[derive(Clone)]
 struct RhaiPluginContext {
-    inner:        Arc<PluginContext>,
+    inner: Arc<PluginContext>,
     /// Subscriptions requested during `init` but not yet converted to handles.
     /// Drained after `init` returns, outside the engine lock.
     sub_requests: Arc<Mutex<Vec<(String, FnPtr)>>>,
@@ -65,13 +64,13 @@ struct RhaiPluginContext {
 /// `"author"`, `"priority"`, `"is_enabled"`, `"install_dir"`.
 fn mod_info_to_dynamic(m: &ModInfo) -> Dynamic {
     let mut map = rhai::Map::new();
-    map.insert("id".into(),          Dynamic::from(m.id));
-    map.insert("slug".into(),        Dynamic::from(m.slug.clone()));
-    map.insert("name".into(),        Dynamic::from(m.name.clone()));
-    map.insert("version".into(),     Dynamic::from(m.version.clone()));
-    map.insert("author".into(),      Dynamic::from(m.author.clone()));
-    map.insert("priority".into(),    Dynamic::from(m.priority));
-    map.insert("is_enabled".into(),  Dynamic::from(m.is_enabled));
+    map.insert("id".into(), Dynamic::from(m.id));
+    map.insert("slug".into(), Dynamic::from(m.slug.clone()));
+    map.insert("name".into(), Dynamic::from(m.name.clone()));
+    map.insert("version".into(), Dynamic::from(m.version.clone()));
+    map.insert("author".into(), Dynamic::from(m.author.clone()));
+    map.insert("priority".into(), Dynamic::from(m.priority));
+    map.insert("is_enabled".into(), Dynamic::from(m.is_enabled));
     map.insert("install_dir".into(), Dynamic::from(m.install_dir.clone()));
     Dynamic::from(map)
 }
@@ -85,65 +84,79 @@ fn event_to_dynamic(event: &ModManagerEvent) -> Dynamic {
     let mut map = rhai::Map::new();
     match event {
         ModManagerEvent::GameLaunching(game) => {
-            map.insert("type".into(),      Dynamic::from("GameLaunching".to_string()));
+            map.insert("type".into(), Dynamic::from("GameLaunching".to_string()));
             map.insert("game_slug".into(), Dynamic::from(game.slug.clone()));
             map.insert("game_name".into(), Dynamic::from(game.name.clone()));
         }
         ModManagerEvent::GameExited { game, exit_code } => {
-            map.insert("type".into(),      Dynamic::from("GameExited".to_string()));
+            map.insert("type".into(), Dynamic::from("GameExited".to_string()));
             map.insert("game_slug".into(), Dynamic::from(game.slug.clone()));
             map.insert("game_name".into(), Dynamic::from(game.name.clone()));
             map.insert("exit_code".into(), Dynamic::from(i64::from(*exit_code)));
         }
         ModManagerEvent::ModInstalled(m) => {
             map.insert("type".into(), Dynamic::from("ModInstalled".to_string()));
-            map.insert("mod".into(),  mod_info_to_dynamic(m));
+            map.insert("mod".into(), mod_info_to_dynamic(m));
         }
         ModManagerEvent::ModEnabled(m) => {
             map.insert("type".into(), Dynamic::from("ModEnabled".to_string()));
-            map.insert("mod".into(),  mod_info_to_dynamic(m));
+            map.insert("mod".into(), mod_info_to_dynamic(m));
         }
         ModManagerEvent::ModDisabled(m) => {
             map.insert("type".into(), Dynamic::from("ModDisabled".to_string()));
-            map.insert("mod".into(),  mod_info_to_dynamic(m));
+            map.insert("mod".into(), mod_info_to_dynamic(m));
         }
         ModManagerEvent::ProfileChanged { old, new } => {
             map.insert("type".into(), Dynamic::from("ProfileChanged".to_string()));
-            map.insert("old".into(),  Dynamic::from(old.clone()));
-            map.insert("new".into(),  Dynamic::from(new.clone()));
+            map.insert("old".into(), Dynamic::from(old.clone()));
+            map.insert("new".into(), Dynamic::from(new.clone()));
         }
-        ModManagerEvent::OverlayMounted { layer_count, merged_path, .. } => {
-            map.insert("type".into(),
-                Dynamic::from("OverlayMounted".to_string()));
-            map.insert("layer_count".into(), Dynamic::from(
-                i64::try_from(*layer_count).unwrap_or(i64::MAX)));
-            map.insert("merged_path".into(),
-                Dynamic::from(merged_path.to_string_lossy().into_owned()));
+        ModManagerEvent::OverlayMounted {
+            layer_count,
+            merged_path,
+            ..
+        } => {
+            map.insert("type".into(), Dynamic::from("OverlayMounted".to_string()));
+            map.insert(
+                "layer_count".into(),
+                Dynamic::from(i64::try_from(*layer_count).unwrap_or(i64::MAX)),
+            );
+            map.insert(
+                "merged_path".into(),
+                Dynamic::from(merged_path.to_string_lossy().into_owned()),
+            );
         }
-        ModManagerEvent::OverlayUnmounted { session_duration_secs, merged_path } => {
-            map.insert("type".into(),
-                Dynamic::from("OverlayUnmounted".to_string()));
+        ModManagerEvent::OverlayUnmounted {
+            session_duration_secs,
+            merged_path,
+        } => {
+            map.insert("type".into(), Dynamic::from("OverlayUnmounted".to_string()));
             map.insert("duration_secs".into(), Dynamic::from(*session_duration_secs));
-            map.insert("merged_path".into(),
-                Dynamic::from(merged_path.to_string_lossy().into_owned()));
+            map.insert(
+                "merged_path".into(),
+                Dynamic::from(merged_path.to_string_lossy().into_owned()),
+            );
         }
-        ModManagerEvent::ConflictMapUpdated { total_conflicts, affected_mods } => {
-            map.insert("type".into(),
-                Dynamic::from("ConflictMapUpdated".to_string()));
-            map.insert("total_conflicts".into(), Dynamic::from(
-                i64::try_from(*total_conflicts).unwrap_or(i64::MAX)));
-            let mods: rhai::Array = affected_mods.iter()
-                .map(|s| Dynamic::from(s.clone()))
-                .collect();
+        ModManagerEvent::ConflictMapUpdated {
+            total_conflicts,
+            affected_mods,
+        } => {
+            map.insert("type".into(), Dynamic::from("ConflictMapUpdated".to_string()));
+            map.insert(
+                "total_conflicts".into(),
+                Dynamic::from(i64::try_from(*total_conflicts).unwrap_or(i64::MAX)),
+            );
+            let mods: rhai::Array =
+                affected_mods.iter().map(|s| Dynamic::from(s.clone())).collect();
             map.insert("affected_mods".into(), Dynamic::from(mods));
         }
         ModManagerEvent::DownloadStarted { url, .. } => {
             map.insert("type".into(), Dynamic::from("DownloadStarted".to_string()));
-            map.insert("url".into(),  Dynamic::from(url.clone()));
+            map.insert("url".into(), Dynamic::from(url.clone()));
         }
         ModManagerEvent::DownloadCompleted { url, result, .. } => {
-            map.insert("type".into(),    Dynamic::from("DownloadCompleted".to_string()));
-            map.insert("url".into(),     Dynamic::from(url.clone()));
+            map.insert("type".into(), Dynamic::from("DownloadCompleted".to_string()));
+            map.insert("url".into(), Dynamic::from(url.clone()));
             map.insert("success".into(), Dynamic::from(result.is_ok()));
         }
     }
@@ -155,19 +168,19 @@ fn event_to_dynamic(event: &ModManagerEvent) -> Dynamic {
 /// Returns `None` for unrecognised strings.
 fn parse_filter_str(s: &str) -> Option<EventFilter> {
     match s {
-        "All"                => Some(EventFilter::All),
-        "GameLaunching"      => Some(EventFilter::GameLaunching),
-        "GameExited"         => Some(EventFilter::GameExited),
-        "ModInstalled"       => Some(EventFilter::ModInstalled),
-        "ModEnabled"         => Some(EventFilter::ModEnabled),
-        "ModDisabled"        => Some(EventFilter::ModDisabled),
-        "ProfileChanged"     => Some(EventFilter::ProfileChanged),
-        "OverlayMounted"     => Some(EventFilter::OverlayMounted),
-        "OverlayUnmounted"   => Some(EventFilter::OverlayUnmounted),
-        "DownloadStarted"    => Some(EventFilter::DownloadStarted),
-        "DownloadCompleted"  => Some(EventFilter::DownloadCompleted),
+        "All" => Some(EventFilter::All),
+        "GameLaunching" => Some(EventFilter::GameLaunching),
+        "GameExited" => Some(EventFilter::GameExited),
+        "ModInstalled" => Some(EventFilter::ModInstalled),
+        "ModEnabled" => Some(EventFilter::ModEnabled),
+        "ModDisabled" => Some(EventFilter::ModDisabled),
+        "ProfileChanged" => Some(EventFilter::ProfileChanged),
+        "OverlayMounted" => Some(EventFilter::OverlayMounted),
+        "OverlayUnmounted" => Some(EventFilter::OverlayUnmounted),
+        "DownloadStarted" => Some(EventFilter::DownloadStarted),
+        "DownloadCompleted" => Some(EventFilter::DownloadCompleted),
         "ConflictMapUpdated" => Some(EventFilter::ConflictMapUpdated),
-        _                    => None,
+        _ => None,
     }
 }
 
@@ -188,28 +201,19 @@ fn build_scripted_engine(config: &SandboxConfig) -> Engine {
     engine.register_type_with_name::<RhaiPluginContext>("PluginContext");
 
     // ctx.subscribe("FilterName", Fn("handler"))
-    engine.register_fn(
-        "subscribe",
-        |ctx: &mut RhaiPluginContext, filter: String, fp: FnPtr| {
-            ctx.sub_requests
-                .lock()
-                .expect("sub_requests lock poisoned")
-                .push((filter, fp));
-        },
-    );
+    engine.register_fn("subscribe", |ctx: &mut RhaiPluginContext, filter: String, fp: FnPtr| {
+        ctx.sub_requests.lock().expect("sub_requests lock poisoned").push((filter, fp));
+    });
 
     // ctx.notify("Info"|"Warning"|"Error", "message")
-    engine.register_fn(
-        "notify",
-        |ctx: &mut RhaiPluginContext, level: String, msg: String| {
-            let lvl = match level.as_str() {
-                "Warning" => NotifyLevel::Warning,
-                "Error"   => NotifyLevel::Error,
-                _         => NotifyLevel::Info,
-            };
-            ctx.inner.notify(lvl, &msg);
-        },
-    );
+    engine.register_fn("notify", |ctx: &mut RhaiPluginContext, level: String, msg: String| {
+        let lvl = match level.as_str() {
+            "Warning" => NotifyLevel::Warning,
+            "Error" => NotifyLevel::Error,
+            _ => NotifyLevel::Info,
+        };
+        ctx.inner.notify(lvl, &msg);
+    });
 
     // ctx.active_profile() -> String
     engine.register_fn("active_profile", |ctx: &mut RhaiPluginContext| -> String {
@@ -217,60 +221,42 @@ fn build_scripted_engine(config: &SandboxConfig) -> Engine {
     });
 
     // ctx.profiles() -> Array of String
-    engine.register_fn(
-        "profiles",
-        |ctx: &mut RhaiPluginContext| -> rhai::Array {
-            ctx.inner.profiles().into_iter().map(Dynamic::from).collect()
-        },
-    );
+    engine.register_fn("profiles", |ctx: &mut RhaiPluginContext| -> rhai::Array {
+        ctx.inner.profiles().into_iter().map(Dynamic::from).collect()
+    });
 
     // ctx.mod_list() -> Array of maps
-    engine.register_fn(
-        "mod_list",
-        |ctx: &mut RhaiPluginContext| -> rhai::Array {
-            ctx.inner.mod_list().iter().map(mod_info_to_dynamic).collect()
-        },
-    );
+    engine.register_fn("mod_list", |ctx: &mut RhaiPluginContext| -> rhai::Array {
+        ctx.inner.mod_list().iter().map(mod_info_to_dynamic).collect()
+    });
 
     // ctx.get_setting("key") -> Dynamic (UNIT if absent)
-    engine.register_fn(
-        "get_setting",
-        |ctx: &mut RhaiPluginContext, key: String| -> Dynamic {
-            match ctx.inner.get_setting(&key) {
-                None                         => Dynamic::UNIT,
-                Some(SettingValue::Bool(b))   => Dynamic::from(b),
-                Some(SettingValue::Int(i))    => Dynamic::from(i),
-                Some(SettingValue::Float(f))  => Dynamic::from(f),
-                Some(SettingValue::String(s)) => Dynamic::from(s),
-            }
-        },
-    );
+    engine.register_fn("get_setting", |ctx: &mut RhaiPluginContext, key: String| -> Dynamic {
+        match ctx.inner.get_setting(&key) {
+            None => Dynamic::UNIT,
+            Some(SettingValue::Bool(b)) => Dynamic::from(b),
+            Some(SettingValue::Int(i)) => Dynamic::from(i),
+            Some(SettingValue::Float(f)) => Dynamic::from(f),
+            Some(SettingValue::String(s)) => Dynamic::from(s),
+        }
+    });
 
     // ctx.set_setting("key", bool|i64|f64|String) — four type overloads
-    engine.register_fn(
-        "set_setting",
-        |ctx: &mut RhaiPluginContext, key: String, val: bool| {
-            let _ = ctx.inner.set_setting(key, SettingValue::Bool(val));
-        },
-    );
-    engine.register_fn(
-        "set_setting",
-        |ctx: &mut RhaiPluginContext, key: String, val: i64| {
-            let _ = ctx.inner.set_setting(key, SettingValue::Int(val));
-        },
-    );
+    engine.register_fn("set_setting", |ctx: &mut RhaiPluginContext, key: String, val: bool| {
+        let _ = ctx.inner.set_setting(key, SettingValue::Bool(val));
+    });
+    engine.register_fn("set_setting", |ctx: &mut RhaiPluginContext, key: String, val: i64| {
+        let _ = ctx.inner.set_setting(key, SettingValue::Int(val));
+    });
     engine.register_fn(
         "set_setting",
         |ctx: &mut RhaiPluginContext, key: String, val: rhai::FLOAT| {
             let _ = ctx.inner.set_setting(key, SettingValue::Float(val));
         },
     );
-    engine.register_fn(
-        "set_setting",
-        |ctx: &mut RhaiPluginContext, key: String, val: String| {
-            let _ = ctx.inner.set_setting(key, SettingValue::String(val));
-        },
-    );
+    engine.register_fn("set_setting", |ctx: &mut RhaiPluginContext, key: String, val: String| {
+        let _ = ctx.inner.set_setting(key, SettingValue::String(val));
+    });
 
     engine
 }
@@ -313,37 +299,49 @@ fn extract_str(engine: &Engine, ast: &AST, fn_name: &str) -> Result<String, Mant
 /// - Registering event handlers by translating Rhai `FnPtr`s to synchronous
 ///   Rust closures that call back into the script via the engine.
 pub struct ScriptedPlugin {
-    id:           String,
-    name:         String,
-    version:      Version,
-    author:       String,
-    description:  String,
+    id: String,
+    name: String,
+    version: Version,
+    author: String,
+    description: String,
     required_api: Version,
     /// Sandboxed engine. `Arc` (not Mutex) because `Engine: Sync` with the
     /// `sync` rhai feature, and `call_fn` takes `&self`.
-    engine:       Arc<Engine>,
+    engine: Arc<Engine>,
     /// Compiled AST shared between lifecycle calls and event handlers.
-    ast:          Arc<AST>,
+    ast: Arc<AST>,
     /// Active subscription handles. Cleared in `shutdown()`.
-    handles:      Vec<SubscriptionHandle>,
+    handles: Vec<SubscriptionHandle>,
 }
 
 impl std::fmt::Debug for ScriptedPlugin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScriptedPlugin")
-            .field("id",      &self.id)
+            .field("id", &self.id)
             .field("version", &self.version.to_string())
             .finish_non_exhaustive()
     }
 }
 
 impl MantlePlugin for ScriptedPlugin {
-    fn id(&self)          -> &str    { &self.id }
-    fn name(&self)        -> &str    { &self.name }
-    fn version(&self)     -> Version { self.version.clone() }
-    fn author(&self)      -> &str    { &self.author }
-    fn description(&self) -> &str    { &self.description }
-    fn required_api_version(&self)   -> Version { self.required_api.clone() }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn version(&self) -> Version {
+        self.version.clone()
+    }
+    fn author(&self) -> &str {
+        &self.author
+    }
+    fn description(&self) -> &str {
+        &self.description
+    }
+    fn required_api_version(&self) -> Version {
+        self.required_api.clone()
+    }
 
     /// Call the script's `init(ctx)` function and register any subscriptions.
     ///
@@ -353,7 +351,7 @@ impl MantlePlugin for ScriptedPlugin {
     fn init(&mut self, ctx: Arc<PluginContext>) -> Result<(), PluginError> {
         // Create the Rhai context wrapper with a fresh subscription buffer.
         let rhai_ctx = RhaiPluginContext {
-            inner:        Arc::clone(&ctx),
+            inner: Arc::clone(&ctx),
             sub_requests: Arc::new(Mutex::new(vec![])),
         };
 
@@ -361,9 +359,9 @@ impl MantlePlugin for ScriptedPlugin {
         {
             let mut scope = Scope::new();
             match self.engine.call_fn::<()>(&mut scope, &self.ast, "init", (rhai_ctx.clone(),)) {
-                Ok(())                => {}
+                Ok(()) => {}
                 Err(e) if is_fn_not_found(&e) => {} // init not defined -- allowed
-                Err(e)               => return Err(PluginError::InitFailed(e.to_string())),
+                Err(e) => return Err(PluginError::InitFailed(e.to_string())),
             }
         }
 
@@ -380,12 +378,13 @@ impl MantlePlugin for ScriptedPlugin {
             let Some(filter) = parse_filter_str(&filter_str) else {
                 tracing::warn!(
                     "scripted plugin '{}': unknown event filter '{}', skipping",
-                    self.id, filter_str
+                    self.id,
+                    filter_str
                 );
                 continue;
             };
             let engine_arc = Arc::clone(&self.engine);
-            let ast_arc    = Arc::clone(&self.ast);
+            let ast_arc = Arc::clone(&self.ast);
             let handle = ctx.subscribe(filter, move |event| {
                 let event_dyn = event_to_dynamic(event);
                 if let Err(e) = fp.call::<()>(&engine_arc, &ast_arc, (event_dyn,)) {
@@ -445,33 +444,30 @@ pub fn load_scripted_plugin(path: &Path) -> Result<ScriptedPlugin, MantleError> 
 /// # Errors
 /// Same as [`load_scripted_plugin`].
 pub fn load_scripted_plugin_with_config(
-    path:   &Path,
+    path: &Path,
     config: &SandboxConfig,
 ) -> Result<ScriptedPlugin, MantleError> {
     let source = std::fs::read_to_string(path)
-        .map_err(|e| MantleError::Plugin(format!(
-            "cannot read '{}': {e}", path.display()
-        )))?;
+        .map_err(|e| MantleError::Plugin(format!("cannot read '{}': {e}", path.display())))?;
 
     let engine = build_scripted_engine(config);
 
     let ast = engine
         .compile(&source)
-        .map_err(|e| MantleError::Plugin(format!(
-            "'{}' compile error: {e}", path.display()
-        )))?;
+        .map_err(|e| MantleError::Plugin(format!("'{}' compile error: {e}", path.display())))?;
 
     // Extract required metadata
-    let id          = extract_str(&engine, &ast, "plugin_id")?;
-    let name        = extract_str(&engine, &ast, "plugin_name")?;
+    let id = extract_str(&engine, &ast, "plugin_id")?;
+    let name = extract_str(&engine, &ast, "plugin_name")?;
     let version_str = extract_str(&engine, &ast, "plugin_version")?;
-    let author      = extract_str(&engine, &ast, "plugin_author")?;
+    let author = extract_str(&engine, &ast, "plugin_author")?;
     let description = extract_str(&engine, &ast, "plugin_description")?;
-    let api_str     = extract_str(&engine, &ast, "plugin_required_api_version")?;
+    let api_str = extract_str(&engine, &ast, "plugin_required_api_version")?;
 
     let version = Version::parse(&version_str).map_err(|e| {
         MantleError::Plugin(format!(
-            "'{}': invalid plugin_version '{version_str}': {e}", path.display()
+            "'{}': invalid plugin_version '{version_str}': {e}",
+            path.display()
         ))
     })?;
 
@@ -498,8 +494,8 @@ pub fn load_scripted_plugin_with_config(
         author,
         description,
         required_api,
-        engine:  Arc::new(engine),
-        ast:     Arc::new(ast),
+        engine: Arc::new(engine),
+        ast: Arc::new(ast),
         handles: vec![],
     })
 }
@@ -515,10 +511,7 @@ mod tests {
 
     /// Write `content` to a temporary `.rhai` file and return handles.
     fn temp_script(content: &str) -> (tempfile::NamedTempFile, std::path::PathBuf) {
-        let mut f = tempfile::Builder::new()
-            .suffix(".rhai")
-            .tempfile()
-            .expect("create temp file");
+        let mut f = tempfile::Builder::new().suffix(".rhai").tempfile().expect("create temp file");
         f.write_all(content.as_bytes()).expect("write temp file");
         let path = f.path().to_owned();
         (f, path)
@@ -563,10 +556,10 @@ mod tests {
     fn metadata_extracted_correctly() {
         let (_f, path) = temp_script(MINIMAL_SCRIPT);
         let plugin = load_scripted_plugin(&path).expect("load should succeed");
-        assert_eq!(plugin.id(),          "test-plugin");
-        assert_eq!(plugin.name(),        "Test Plugin");
-        assert_eq!(plugin.version(),     Version::parse("1.0.0").unwrap());
-        assert_eq!(plugin.author(),      "Test Author");
+        assert_eq!(plugin.id(), "test-plugin");
+        assert_eq!(plugin.name(), "Test Plugin");
+        assert_eq!(plugin.version(), Version::parse("1.0.0").unwrap());
+        assert_eq!(plugin.author(), "Test Author");
         assert_eq!(plugin.description(), "A test plugin.");
     }
 
@@ -625,8 +618,8 @@ mod tests {
             ..SandboxConfig::default()
         };
         let (_f, path) = temp_script(script);
-        let mut plugin = load_scripted_plugin_with_config(&path, &config)
-            .expect("load should succeed");
+        let mut plugin =
+            load_scripted_plugin_with_config(&path, &config).expect("load should succeed");
         let ctx = PluginContext::for_tests();
         let result = plugin.init(ctx);
         assert!(result.is_err(), "expected init to fail due to operation limit");

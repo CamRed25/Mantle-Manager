@@ -256,7 +256,8 @@ mod tests {
     #[test]
     fn parse_returns_none_for_wrong_part_count() {
         assert!(parse_address_lib_path("versionlib-1-6-659.bin").is_none()); // 3 parts
-        assert!(parse_address_lib_path("versionlib-1-6-659-0-extra.bin").is_none()); // 5 parts
+        assert!(parse_address_lib_path("versionlib-1-6-659-0-extra.bin").is_none());
+        // 5 parts
     }
 
     // ── detect_address_lib_conflicts ─────────────────────────────────────────
@@ -283,20 +284,16 @@ mod tests {
 
     #[test]
     fn single_mod_single_version_no_game_version_is_clean() {
-        let mods = vec![(
-            "mod-a".to_owned(),
-            files(&["data/skse/plugins/versionlib-1-6-659-0.bin"]),
-        )];
+        let mods =
+            vec![("mod-a".to_owned(), files(&["data/skse/plugins/versionlib-1-6-659-0.bin"]))];
         let result = detect_address_lib_conflicts(&mods, None).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
     fn single_mod_matches_game_version_is_clean() {
-        let mods = vec![(
-            "mod-a".to_owned(),
-            files(&["data/skse/plugins/versionlib-1-6-659-0.bin"]),
-        )];
+        let mods =
+            vec![("mod-a".to_owned(), files(&["data/skse/plugins/versionlib-1-6-659-0.bin"]))];
         let result = detect_address_lib_conflicts(&mods, Some("1.6.659.0")).unwrap();
         assert!(result.is_empty());
     }
@@ -324,7 +321,9 @@ mod tests {
 
         let c = &result[0];
         assert_eq!(c.library_type, "versionlib");
-        assert!(matches!(&c.kind, AddressLibMismatch::InterModMismatch { versions } if versions.len() == 2));
+        assert!(
+            matches!(&c.kind, AddressLibMismatch::InterModMismatch { versions } if versions.len() == 2)
+        );
 
         let AddressLibMismatch::InterModMismatch { versions } = &c.kind else {
             panic!("wrong kind")
@@ -348,12 +347,9 @@ mod tests {
 
     #[test]
     fn single_mod_wrong_game_version_is_game_mismatch() {
-        let mods = vec![(
-            "mod-a".to_owned(),
-            files(&["data/skse/plugins/versionlib-1-5-97-0.bin"]),
-        )];
-        let result =
-            detect_address_lib_conflicts(&mods, Some("1.6.659.0")).unwrap();
+        let mods =
+            vec![("mod-a".to_owned(), files(&["data/skse/plugins/versionlib-1-5-97-0.bin"]))];
+        let result = detect_address_lib_conflicts(&mods, Some("1.6.659.0")).unwrap();
         assert_eq!(result.len(), 1);
 
         let c = &result[0];

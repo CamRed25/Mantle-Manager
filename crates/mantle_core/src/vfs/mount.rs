@@ -93,11 +93,7 @@ impl MountHandle {
     /// # Errors
     /// Returns [`MantleError::Vfs`] or [`MantleError::Io`] if teardown fails.
     pub fn unmount(self) -> Result<(), MantleError> {
-        tracing::info!(
-            "VFS unmounting: {} (backend: {})",
-            self.merge_dir.display(),
-            self.kind,
-        );
+        tracing::info!("VFS unmounting: {} (backend: {})", self.merge_dir.display(), self.kind,);
         let result = match self.inner {
             ActiveMount::Kernel(b) => b.unmount(),
             ActiveMount::Fuse(b) => b.unmount(),
@@ -218,5 +214,9 @@ pub fn mount_with(kind: BackendKind, params: MountParams) -> Result<MountHandle,
         kind,
     );
 
-    Ok(MountHandle { inner, kind, merge_dir })
+    Ok(MountHandle {
+        inner,
+        kind,
+        merge_dir,
+    })
 }

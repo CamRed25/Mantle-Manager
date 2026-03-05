@@ -117,8 +117,9 @@ pub fn extract_ba2(path: &Path, dest: &Path) -> Result<(), MantleError> {
 /// # Returns
 /// `Vec<String>` of file paths, or an error.
 fn tes3_list(path: &Path) -> Result<Vec<String>, MantleError> {
-    let archive = tes3::Archive::read(path)
-        .map_err(|e| MantleError::Archive(format!("tes3 read error for {}: {e}", path.display())))?;
+    let archive = tes3::Archive::read(path).map_err(|e| {
+        MantleError::Archive(format!("tes3 read error for {}: {e}", path.display()))
+    })?;
 
     let mut files = Vec::new();
     for (key, _file) in &archive {
@@ -137,8 +138,9 @@ fn tes3_list(path: &Path) -> Result<Vec<String>, MantleError> {
 /// # Returns
 /// `Ok(())` on success, or an error.
 fn tes3_extract(path: &Path, dest: &Path) -> Result<(), MantleError> {
-    let archive = tes3::Archive::read(path)
-        .map_err(|e| MantleError::Archive(format!("tes3 read error for {}: {e}", path.display())))?;
+    let archive = tes3::Archive::read(path).map_err(|e| {
+        MantleError::Archive(format!("tes3 read error for {}: {e}", path.display()))
+    })?;
 
     for (key, file) in &archive {
         let rel = normalise_path(&bstr_to_string(key.name()));
@@ -158,8 +160,9 @@ fn tes3_extract(path: &Path, dest: &Path) -> Result<(), MantleError> {
 /// # Returns
 /// `Vec<String>` of forward-slash relative paths, or an error.
 fn tes4_list(path: &Path) -> Result<Vec<String>, MantleError> {
-    let (archive, _options) = tes4::Archive::read(path)
-        .map_err(|e| MantleError::Archive(format!("tes4 read error for {}: {e}", path.display())))?;
+    let (archive, _options) = tes4::Archive::read(path).map_err(|e| {
+        MantleError::Archive(format!("tes4 read error for {}: {e}", path.display()))
+    })?;
 
     let mut files = Vec::new();
     for (dir_key, dir) in &archive {
@@ -185,8 +188,9 @@ fn tes4_list(path: &Path) -> Result<Vec<String>, MantleError> {
 /// # Returns
 /// `Ok(())` on success, or an error.
 fn tes4_extract(path: &Path, dest: &Path) -> Result<(), MantleError> {
-    let (archive, options) = tes4::Archive::read(path)
-        .map_err(|e| MantleError::Archive(format!("tes4 read error for {}: {e}", path.display())))?;
+    let (archive, options) = tes4::Archive::read(path).map_err(|e| {
+        MantleError::Archive(format!("tes4 read error for {}: {e}", path.display()))
+    })?;
 
     let compression_opts = Tes4CompressionOptions::builder().version(options.version()).build();
 
@@ -256,9 +260,10 @@ fn fo4_extract(path: &Path, dest: &Path) -> Result<(), MantleError> {
         let mut combined: Vec<u8> = Vec::new();
         for chunk in file {
             let data = if chunk.is_compressed() {
-                let decompressed = chunk.decompress(&fo4::ChunkCompressionOptions::default()).map_err(|e| {
-                    MantleError::Archive(format!("fo4 chunk decompress error for {rel}: {e}"))
-                })?;
+                let decompressed =
+                    chunk.decompress(&fo4::ChunkCompressionOptions::default()).map_err(|e| {
+                        MantleError::Archive(format!("fo4 chunk decompress error for {rel}: {e}"))
+                    })?;
                 decompressed.as_bytes().to_vec()
             } else {
                 chunk.as_bytes().to_vec()
@@ -282,8 +287,9 @@ fn fo4_extract(path: &Path, dest: &Path) -> Result<(), MantleError> {
 /// `Ok(())` on success, or a [`MantleError::Archive`] wrapping any I/O error.
 fn write_bytes(path: &Path, data: &[u8]) -> Result<(), MantleError> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| MantleError::Archive(format!("failed to create dir {}: {e}", parent.display())))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            MantleError::Archive(format!("failed to create dir {}: {e}", parent.display()))
+        })?;
     }
     fs::write(path, data)
         .map_err(|e| MantleError::Archive(format!("failed to write {}: {e}", path.display())))

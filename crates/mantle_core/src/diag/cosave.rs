@@ -259,10 +259,7 @@ mod tests {
             GameKind::Starfield,
         ];
         for kind in games {
-            assert!(
-                cosave_config_for(kind).is_some(),
-                "{kind:?} must have a cosave config"
-            );
+            assert!(cosave_config_for(kind).is_some(), "{kind:?} must have a cosave config");
         }
     }
 
@@ -364,10 +361,7 @@ mod tests {
         fs::write(saves.path().join("save_a.ess"), b"s").unwrap();
         let result = scan_missing_cosaves(saves.path(), mods.path(), &cfg);
         assert_eq!(result.missing_cosaves.len(), 2);
-        assert!(
-            result.missing_cosaves[0] < result.missing_cosaves[1],
-            "results must be sorted"
-        );
+        assert!(result.missing_cosaves[0] < result.missing_cosaves[1], "results must be sorted");
     }
 
     #[test]

@@ -119,10 +119,7 @@ pub fn detect_dll_conflicts(
 
     for (mod_id, paths) in mod_dll_files {
         for path in paths {
-            path_to_mods
-                .entry(path.as_str())
-                .or_default()
-                .push(mod_id.as_str());
+            path_to_mods.entry(path.as_str()).or_default().push(mod_id.as_str());
         }
     }
 
@@ -172,10 +169,9 @@ pub fn dll_files_for_profile(
         .map_err(MantleError::Database)?;
 
     let rows: Vec<(String, String)> = stmt
-        .query_map(
-            rusqlite::named_params! { ":pid": profile_id },
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
+        .query_map(rusqlite::named_params! { ":pid": profile_id }, |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(MantleError::Database)?
         .collect::<Result<_, _>>()
         .map_err(MantleError::Database)?;
@@ -211,10 +207,7 @@ pub fn dll_files_for_profile(
 mod tests {
     use super::*;
     use crate::data::{
-        mod_files::InsertModFile,
-        mods::InsertMod,
-        profiles::InsertProfile,
-        run_migrations,
+        mod_files::InsertModFile, mods::InsertMod, profiles::InsertProfile, run_migrations,
     };
     use rusqlite::Connection;
 
@@ -308,10 +301,7 @@ mod tests {
 
     #[test]
     fn detect_single_mod_no_conflict() {
-        let input = vec![(
-            "mod_a".to_owned(),
-            vec!["data/skse/plugins/foo.dll".to_owned()],
-        )];
+        let input = vec![("mod_a".to_owned(), vec!["data/skse/plugins/foo.dll".to_owned()])];
         let result = detect_dll_conflicts(&input).unwrap();
         assert!(result.is_empty());
     }
@@ -319,14 +309,8 @@ mod tests {
     #[test]
     fn detect_two_mods_different_dlls_no_conflict() {
         let input = vec![
-            (
-                "mod_a".to_owned(),
-                vec!["data/skse/plugins/foo.dll".to_owned()],
-            ),
-            (
-                "mod_b".to_owned(),
-                vec!["data/skse/plugins/bar.dll".to_owned()],
-            ),
+            ("mod_a".to_owned(), vec!["data/skse/plugins/foo.dll".to_owned()]),
+            ("mod_b".to_owned(), vec!["data/skse/plugins/bar.dll".to_owned()]),
         ];
         let result = detect_dll_conflicts(&input).unwrap();
         assert!(result.is_empty());
@@ -335,14 +319,8 @@ mod tests {
     #[test]
     fn detect_two_mods_same_dll_one_conflict() {
         let input = vec![
-            (
-                "mod_a".to_owned(),
-                vec!["data/skse/plugins/foo.dll".to_owned()],
-            ),
-            (
-                "mod_b".to_owned(),
-                vec!["data/skse/plugins/foo.dll".to_owned()],
-            ),
+            ("mod_a".to_owned(), vec!["data/skse/plugins/foo.dll".to_owned()]),
+            ("mod_b".to_owned(), vec!["data/skse/plugins/foo.dll".to_owned()]),
         ];
         let result = detect_dll_conflicts(&input).unwrap();
         assert_eq!(result.len(), 1);
@@ -355,18 +333,9 @@ mod tests {
     #[test]
     fn detect_three_way_conflict() {
         let input = vec![
-            (
-                "winner".to_owned(),
-                vec!["data/skse/plugins/shared.dll".to_owned()],
-            ),
-            (
-                "loser_1".to_owned(),
-                vec!["data/skse/plugins/shared.dll".to_owned()],
-            ),
-            (
-                "loser_2".to_owned(),
-                vec!["data/skse/plugins/shared.dll".to_owned()],
-            ),
+            ("winner".to_owned(), vec!["data/skse/plugins/shared.dll".to_owned()]),
+            ("loser_1".to_owned(), vec!["data/skse/plugins/shared.dll".to_owned()]),
+            ("loser_2".to_owned(), vec!["data/skse/plugins/shared.dll".to_owned()]),
         ];
         let result = detect_dll_conflicts(&input).unwrap();
         assert_eq!(result.len(), 1);
@@ -385,10 +354,7 @@ mod tests {
                     "data/skse/plugins/bar.dll".to_owned(),
                 ],
             ),
-            (
-                "mod_b".to_owned(),
-                vec!["data/skse/plugins/foo.dll".to_owned()],
-            ),
+            ("mod_b".to_owned(), vec!["data/skse/plugins/foo.dll".to_owned()]),
         ];
         let result = detect_dll_conflicts(&input).unwrap();
         assert_eq!(result.len(), 1);
@@ -425,7 +391,10 @@ mod tests {
         let conn = temp_conn();
         let pid = crate::data::profiles::insert_profile(
             &conn,
-            &InsertProfile { name: "p", game_slug: Some("skyrim_se") },
+            &InsertProfile {
+                name: "p",
+                game_slug: Some("skyrim_se"),
+            },
         )
         .unwrap();
         let result = dll_files_for_profile(&conn, pid).unwrap();
@@ -509,7 +478,10 @@ mod tests {
         let mid = insert_mod(&conn, "mod_d");
         let pid = crate::data::profiles::insert_profile(
             &conn,
-            &InsertProfile { name: "p2", game_slug: Some("skyrim_se") },
+            &InsertProfile {
+                name: "p2",
+                game_slug: Some("skyrim_se"),
+            },
         )
         .unwrap();
         // Insert mod with is_enabled = 0.

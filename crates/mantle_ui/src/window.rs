@@ -41,8 +41,7 @@ use mantle_core::config::{default_settings_path, AppSettings};
 
 use crate::{
     pages::{downloads, mods, overview, plugins, profiles},
-    settings,
-    sidebar,
+    settings, sidebar,
     state::AppState,
     state_worker,
 };
@@ -134,8 +133,7 @@ pub fn build_ui(app: &adw::Application) {
     // The idle callback stays registered as `Continue` so it processes every
     // delivery — both the initial startup load and user-triggered reloads.
     let refresh_sender = sender.clone();
-    let refresh_fn: Rc<dyn Fn()> =
-        Rc::new(move || state_worker::spawn(refresh_sender.clone()));
+    let refresh_fn: Rc<dyn Fn()> = Rc::new(move || state_worker::spawn(refresh_sender.clone()));
 
     // ── Initial page content ──────────────────────────────────────────────
     // ToastOverlay created here so it can be passed to page builders that
@@ -152,14 +150,8 @@ pub fn build_ui(app: &adw::Application) {
     split_view.set_max_sidebar_width(360.0);
     split_view.set_sidebar_width_fraction(0.25);
 
-    let sidebar_nav = adw::NavigationPage::builder()
-        .title("Summary")
-        .child(&aside)
-        .build();
-    let content_nav = adw::NavigationPage::builder()
-        .title("Mantle Manager")
-        .child(&stack)
-        .build();
+    let sidebar_nav = adw::NavigationPage::builder().title("Summary").child(&aside).build();
+    let content_nav = adw::NavigationPage::builder().title("Mantle Manager").child(&stack).build();
     split_view.set_sidebar(Some(&sidebar_nav));
     split_view.set_content(Some(&content_nav));
 
@@ -260,14 +252,9 @@ fn apply_state_update(
     let (new_stack, new_aside) = build_main_content(state, window, refresh, toast_overlay);
     switcher.set_stack(Some(&new_stack));
 
-    let new_sidebar = adw::NavigationPage::builder()
-        .title("Summary")
-        .child(&new_aside)
-        .build();
-    let new_content = adw::NavigationPage::builder()
-        .title("Mantle Manager")
-        .child(&new_stack)
-        .build();
+    let new_sidebar = adw::NavigationPage::builder().title("Summary").child(&new_aside).build();
+    let new_content =
+        adw::NavigationPage::builder().title("Mantle Manager").child(&new_stack).build();
     split_view.set_sidebar(Some(&new_sidebar));
     split_view.set_content(Some(&new_content));
 
@@ -303,19 +290,14 @@ fn build_main_content(
     let ov_page = stack.add_titled(&overview::build(state), Some("overview"), "Overview");
     ov_page.set_icon_name(Some("go-home-symbolic"));
 
-    let mods_page = stack.add_titled(
-        &mods::build(state, window, refresh, toast_overlay),
-        Some("mods"),
-        "Mods",
-    );
+    let mods_page =
+        stack.add_titled(&mods::build(state, window, refresh, toast_overlay), Some("mods"), "Mods");
     mods_page.set_icon_name(Some("application-x-addon-symbolic"));
 
-    let plugins_page =
-        stack.add_titled(&plugins::build(state), Some("plugins"), "Plugins");
+    let plugins_page = stack.add_titled(&plugins::build(state), Some("plugins"), "Plugins");
     plugins_page.set_icon_name(Some("application-x-executable-symbolic"));
 
-    let downloads_page =
-        stack.add_titled(&downloads::build(state), Some("downloads"), "Downloads");
+    let downloads_page = stack.add_titled(&downloads::build(state), Some("downloads"), "Downloads");
     downloads_page.set_icon_name(Some("folder-download-symbolic"));
 
     let profiles_page =
@@ -396,9 +378,7 @@ fn wire_launch_button(
                             *mount_handle.borrow_mut() = Some(handle);
                         }
                         Err(e) => {
-                            tracing::warn!(
-                                "VFS mount failed — launching without overlay: {e}"
-                            );
+                            tracing::warn!("VFS mount failed — launching without overlay: {e}");
                         }
                     }
                 }
@@ -444,9 +424,7 @@ fn build_mount_params(data_dir: &std::path::Path) -> Result<mantle_core::vfs::Mo
     };
 
     let db = Database::open(&default_db_path()).map_err(|e| e.to_string())?;
-    let profile = db
-        .with_conn(get_active_profile)
-        .map_err(|e| e.to_string())?;
+    let profile = db.with_conn(get_active_profile).map_err(|e| e.to_string())?;
 
     let Some(profile) = profile else {
         return Ok(mantle_core::vfs::MountParams {
@@ -479,10 +457,7 @@ fn build_mount_params(data_dir: &std::path::Path) -> Result<mantle_core::vfs::Mo
 /// # Parameters
 /// - `window`: Transient parent for the file chooser dialog.
 /// - `toast_overlay`: Toast target for installation feedback.
-pub fn open_mod_install_dialog(
-    window: &adw::ApplicationWindow,
-    toast_overlay: &adw::ToastOverlay,
-) {
+pub fn open_mod_install_dialog(window: &adw::ApplicationWindow, toast_overlay: &adw::ToastOverlay) {
     let chooser = gtk4::FileChooserNative::builder()
         .title("Install Mod Archive")
         .transient_for(window)
@@ -556,10 +531,18 @@ fn register_installed_mod(name: &str, install_dir: &str, archive_path: &str) -> 
     let slug: String = name
         .to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
-    let Ok(db) = Database::open(&default_db_path()) else { return None };
+    let Ok(db) = Database::open(&default_db_path()) else {
+        return None;
+    };
 
     // Resolve or create the mod record.
     let mod_id = db.with_conn(|conn| {
@@ -567,20 +550,23 @@ fn register_installed_mod(name: &str, install_dir: &str, archive_path: &str) -> 
         if let Some(rec) = existing {
             Ok::<i64, mantle_core::Error>(rec.id)
         } else {
-            insert_mod(conn, &InsertMod {
-                slug: &slug,
-                name,
-                version: None,
-                author: None,
-                description: None,
-                nexus_mod_id: None,
-                nexus_file_id: None,
-                source_url: None,
-                archive_path: Some(archive_path),
-                install_dir,
-                archive_hash: None,
-                installed_at: None,
-            })
+            insert_mod(
+                conn,
+                &InsertMod {
+                    slug: &slug,
+                    name,
+                    version: None,
+                    author: None,
+                    description: None,
+                    nexus_mod_id: None,
+                    nexus_file_id: None,
+                    source_url: None,
+                    archive_path: Some(archive_path),
+                    install_dir,
+                    archive_hash: None,
+                    installed_at: None,
+                },
+            )
         }
     });
 
@@ -618,17 +604,17 @@ fn register_installed_mod(name: &str, install_dir: &str, archive_path: &str) -> 
 fn register_mod_files(mod_id: i64, dest: &std::path::Path) {
     use mantle_core::{
         config::default_db_path,
-        data::{mod_files::{hash_file_xxh3, insert_mod_files, InsertModFile}, Database},
+        data::{
+            mod_files::{hash_file_xxh3, insert_mod_files, InsertModFile},
+            Database,
+        },
         install::{extract_mod_archives, normalize_dir},
     };
 
     // 1. Extract embedded BSA/BA2 archives and delete the originals.
     let bsa_result = extract_mod_archives(dest, true);
     if !bsa_result.is_ok() {
-        tracing::warn!(
-            "register_mod_files: {} BSA(s) failed to extract",
-            bsa_result.failed.len()
-        );
+        tracing::warn!("register_mod_files: {} BSA(s) failed to extract", bsa_result.failed.len());
     }
 
     // 2. Normalize all filesystem paths to lowercase.
@@ -649,14 +635,15 @@ fn register_mod_files(mod_id: i64, dest: &std::path::Path) {
     //    borrow them with the same lifetime.
     let mut file_data: Vec<(String, String, i64)> = Vec::with_capacity(paths.len());
     for path in &paths {
-        let Ok(rel_path) = path.strip_prefix(dest) else { continue };
+        let Ok(rel_path) = path.strip_prefix(dest) else {
+            continue;
+        };
         let rel = rel_path.to_string_lossy().into_owned();
         let Some(hash) = hash_file_xxh3(path) else {
             tracing::warn!("register_mod_files: could not hash {}", path.display());
             continue;
         };
-        let size = i64::try_from(path.metadata().map_or(0, |m| m.len()))
-            .unwrap_or(i64::MAX);
+        let size = i64::try_from(path.metadata().map_or(0, |m| m.len())).unwrap_or(i64::MAX);
         file_data.push((rel, hash, size));
     }
 
@@ -671,7 +658,9 @@ fn register_mod_files(mod_id: i64, dest: &std::path::Path) {
         })
         .collect();
 
-    let Ok(db) = Database::open(&default_db_path()) else { return };
+    let Ok(db) = Database::open(&default_db_path()) else {
+        return;
+    };
     if let Err(e) = db.with_conn(|conn| insert_mod_files(conn, &records)) {
         tracing::warn!("register_mod_files: DB insert failed: {e}");
     }
@@ -746,8 +735,7 @@ fn install_mod_archive(archive_path: std::path::PathBuf, toast_overlay: adw::Toa
         };
 
         // Resolve mods directory from settings, falling back to <data>/mods/.
-        let settings =
-            AppSettings::load_or_default(&default_settings_path()).unwrap_or_default();
+        let settings = AppSettings::load_or_default(&default_settings_path()).unwrap_or_default();
         let mods_dir = settings.paths.mods_dir.unwrap_or_else(|| {
             default_db_path()
                 .parent()

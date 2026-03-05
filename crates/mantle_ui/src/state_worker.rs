@@ -29,9 +29,7 @@ use std::sync::mpsc::Sender;
 use mantle_core::{
     config::{default_db_path, AppSettings},
     data::{profiles, Database},
-    game,
-    mod_list,
-    vfs,
+    game, mod_list, vfs,
 };
 
 use crate::state::{AppState, ModEntry, ProfileEntry};
@@ -57,9 +55,7 @@ pub fn spawn(sender: Sender<AppState>) {
     std::thread::spawn(move || match load_state() {
         Ok(state) => {
             if sender.send(state).is_err() {
-                tracing::warn!(
-                    "state_worker: receiver dropped before initial state was delivered"
-                );
+                tracing::warn!("state_worker: receiver dropped before initial state was delivered");
             }
         }
         Err(e) => {
@@ -106,16 +102,12 @@ fn load_state() -> anyhow::Result<AppState> {
     let all_profiles = db.with_conn(profiles::list_profiles)?;
     let active = db.with_conn(profiles::get_active_profile)?;
 
-    let active_profile_name = active
-        .as_ref()
-        .map_or_else(String::new, |p| p.name.clone());
+    let active_profile_name = active.as_ref().map_or_else(String::new, |p| p.name.clone());
     let active_profile_id = active.as_ref().map(|p| p.id);
 
     // Batch-query mod counts for all profiles in one round-trip so the
     // sidebar can show "{n} mods" next to each profile without N extra queries.
-    let profile_mod_counts = db
-        .with_conn(mod_list::mod_counts_per_profile)
-        .unwrap_or_default();
+    let profile_mod_counts = db.with_conn(mod_list::mod_counts_per_profile).unwrap_or_default();
 
     let profile_entries: Vec<ProfileEntry> = all_profiles
         .iter()
@@ -220,11 +212,8 @@ fn build_mod_list_with_conflicts(
     let enabled_mods: Vec<_> = profile_mods.iter().filter(|m| m.is_enabled).collect();
 
     // Map mod_id → index in conflict_entries (preserves priority order).
-    let id_to_ci: HashMap<i64, usize> = enabled_mods
-        .iter()
-        .enumerate()
-        .map(|(i, m)| (m.mod_id, i))
-        .collect();
+    let id_to_ci: HashMap<i64, usize> =
+        enabled_mods.iter().enumerate().map(|(i, m)| (m.mod_id, i)).collect();
 
     let mut conflict_entries: Vec<ConflictEntry> = enabled_mods
         .iter()
@@ -254,10 +243,7 @@ fn build_mod_list_with_conflicts(
     let conflict_by_id: HashMap<i64, bool> = enabled_mods
         .iter()
         .map(|m| {
-            let has = !matches!(
-                conflict_map.role_of_mod(&m.mod_slug),
-                conflict::ModRole::Clean
-            );
+            let has = !matches!(conflict_map.role_of_mod(&m.mod_slug), conflict::ModRole::Clean);
             (m.mod_id, has)
         })
         .collect();
@@ -276,7 +262,7 @@ fn build_mod_list_with_conflicts(
         })
         .collect();
 
-Ok((entries, count, total_file_conflicts))
+    Ok((entries, count, total_file_conflicts))
 }
 
 /// Scan `{data_dir}/plugins/`, load every `.so` and `.rhai` plugin, and return
@@ -305,7 +291,7 @@ fn load_plugins(
     use mantle_core::{
         config::data_dir,
         plugin::{
-            context::{SettingValue},
+            context::SettingValue,
             event::{EventBus, ModInfo},
             registry::PluginRegistry,
         },

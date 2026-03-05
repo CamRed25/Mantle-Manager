@@ -18,34 +18,13 @@ pub mod scripted;
 // ─── Public re-exports ────────────────────────────────────────────────────────
 
 // Event system
-pub use event::{
-    EventBus,
-    EventFilter,
-    ModInfo,
-    ModManagerEvent,
-    SubscriptionHandle,
-    VfsBackend,
-};
+pub use event::{EventBus, EventFilter, ModInfo, ModManagerEvent, SubscriptionHandle, VfsBackend};
 
 // Plugin trait + context
 pub use context::{
-    Capability,
-    DownloadHandle,
-    MantlePlugin,
-    ModState,
-    NotifyLevel,
-    PluginContext,
-    PluginError,
-    PluginSetting,
-    SettingValue,
-    PLUGIN_API_VERSION,
-    RUSTC_TOOLCHAIN_VERSION,
+    Capability, DownloadHandle, MantlePlugin, ModState, NotifyLevel, PluginContext, PluginError,
+    PluginSetting, SettingValue, PLUGIN_API_VERSION, RUSTC_TOOLCHAIN_VERSION,
 };
 
 // Plugin registry
-pub use registry::{
-    ManifestCapabilities,
-    PluginLoadError,
-    PluginManifest,
-    PluginRegistry,
-};
+pub use registry::{ManifestCapabilities, PluginLoadError, PluginManifest, PluginRegistry};

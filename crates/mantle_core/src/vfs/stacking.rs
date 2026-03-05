@@ -236,9 +236,8 @@ mod tests {
         const N_DIRS: usize = CHUNK_SIZE + 1; // 201 — forces exactly 2 chunks
 
         // Create N_DIRS source directories; place a unique file in each.
-        let sources: Vec<tempfile::TempDir> = (0..N_DIRS)
-            .map(|_| tempfile::TempDir::new().unwrap())
-            .collect();
+        let sources: Vec<tempfile::TempDir> =
+            (0..N_DIRS).map(|_| tempfile::TempDir::new().unwrap()).collect();
         for (i, s) in sources.iter().enumerate() {
             std::fs::write(s.path().join(format!("mod{i}.esp")), b"TES4").unwrap();
         }
@@ -246,12 +245,9 @@ mod tests {
         let lower_dirs: Vec<PathBuf> = sources.iter().map(|s| s.path().to_owned()).collect();
         let final_merge = tempfile::TempDir::new().unwrap();
 
-        let stacked = mount_stacked(
-            BackendKind::SymlinkFarm,
-            lower_dirs,
-            final_merge.path().to_owned(),
-        )
-        .expect("mount_stacked must succeed with symlink-farm backend");
+        let stacked =
+            mount_stacked(BackendKind::SymlinkFarm, lower_dirs, final_merge.path().to_owned())
+                .expect("mount_stacked must succeed with symlink-farm backend");
 
         // File from the first source dir must be visible in the final merge.
         assert!(
@@ -260,10 +256,7 @@ mod tests {
         );
         // File from the last source dir must also be visible.
         assert!(
-            stacked
-                .merge_dir()
-                .join(format!("mod{}.esp", N_DIRS - 1))
-                .exists(),
+            stacked.merge_dir().join(format!("mod{}.esp", N_DIRS - 1)).exists(),
             "last mod must be visible in the final merge dir"
         );
 

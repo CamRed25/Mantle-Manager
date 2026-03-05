@@ -64,10 +64,7 @@ pub enum PluginError {
 
     /// Plugin requires an API version the host cannot satisfy.
     #[error("API version mismatch: plugin requires {required}, host provides {loaded}")]
-    ApiVersionMismatch {
-        required: Version,
-        loaded:   Version,
-    },
+    ApiVersionMismatch { required: Version, loaded: Version },
 
     /// Plugin attempted a network operation but the `net` feature is disabled.
     #[error("network feature is not enabled in this build")]
@@ -100,13 +97,13 @@ pub enum SettingValue {
 pub struct PluginSetting {
     /// Unique key used to read/write the setting via
     /// [`PluginContext::get_setting`] / [`PluginContext::set_setting`].
-    pub key:         &'static str,
+    pub key: &'static str,
     /// Short, user-visible label for the setting.
-    pub label:       &'static str,
+    pub label: &'static str,
     /// Optional longer description shown as a tooltip or help text.
     pub description: Option<&'static str>,
     /// Default value — used when the setting has not been configured yet.
-    pub default:     SettingValue,
+    pub default: SettingValue,
 }
 
 // ─── Auxiliary enums ─────────────────────────────────────────────────────────
@@ -266,25 +263,25 @@ impl PluginContext {
     // no sensible grouping that would not obscure the API.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        plugin_id:      impl Into<String>,
-        mod_list:       Vec<ModInfo>,
+        plugin_id: impl Into<String>,
+        mod_list: Vec<ModInfo>,
         active_profile: impl Into<String>,
-        profiles:       Vec<String>,
-        game:           Option<GameInfo>,
-        event_bus:      Arc<EventBus>,
-        settings:       HashMap<String, SettingValue>,
-        data_dir:       impl Into<PathBuf>,
-        capabilities:   HashSet<Capability>,
+        profiles: Vec<String>,
+        game: Option<GameInfo>,
+        event_bus: Arc<EventBus>,
+        settings: HashMap<String, SettingValue>,
+        data_dir: impl Into<PathBuf>,
+        capabilities: HashSet<Capability>,
     ) -> Arc<Self> {
         Arc::new(Self {
-            plugin_id:      plugin_id.into(),
-            mod_list:       RwLock::new(mod_list),
+            plugin_id: plugin_id.into(),
+            mod_list: RwLock::new(mod_list),
             active_profile: RwLock::new(active_profile.into()),
-            profiles:       RwLock::new(profiles),
-            game:           RwLock::new(game),
+            profiles: RwLock::new(profiles),
+            game: RwLock::new(game),
             event_bus,
-            settings:       Mutex::new(settings),
-            data_dir:       data_dir.into(),
+            settings: Mutex::new(settings),
+            data_dir: data_dir.into(),
             capabilities,
         })
     }
@@ -300,10 +297,7 @@ impl PluginContext {
     /// Panics if the internal `RwLock` is poisoned.
     #[must_use]
     pub fn mod_list(&self) -> Vec<ModInfo> {
-        self.mod_list
-            .read()
-            .expect("PluginContext: mod_list lock poisoned")
-            .clone()
+        self.mod_list.read().expect("PluginContext: mod_list lock poisoned").clone()
     }
 
     /// Look up a mod's enabled/disabled state by slug.
@@ -318,13 +312,14 @@ impl PluginContext {
     /// Panics if the internal `RwLock` is poisoned.
     #[must_use]
     pub fn mod_state(&self, slug: &str) -> Option<ModState> {
-        let list = self
-            .mod_list
-            .read()
-            .expect("PluginContext: mod_list lock poisoned");
-        list.iter()
-            .find(|m| m.slug == slug)
-            .map(|m| if m.is_enabled { ModState::Enabled } else { ModState::Disabled })
+        let list = self.mod_list.read().expect("PluginContext: mod_list lock poisoned");
+        list.iter().find(|m| m.slug == slug).map(|m| {
+            if m.is_enabled {
+                ModState::Enabled
+            } else {
+                ModState::Disabled
+            }
+        })
     }
 
     /// Returns the name of the currently active profile.
@@ -345,10 +340,7 @@ impl PluginContext {
     /// Panics if the internal `RwLock` is poisoned.
     #[must_use]
     pub fn profiles(&self) -> Vec<String> {
-        self.profiles
-            .read()
-            .expect("PluginContext: profiles lock poisoned")
-            .clone()
+        self.profiles.read().expect("PluginContext: profiles lock poisoned").clone()
     }
 
     /// Returns information about the currently active game, if detected.
@@ -357,10 +349,7 @@ impl PluginContext {
     /// Panics if the internal `RwLock` is poisoned.
     #[must_use]
     pub fn game(&self) -> Option<GameInfo> {
-        self.game
-            .read()
-            .expect("PluginContext: game lock poisoned")
-            .clone()
+        self.game.read().expect("PluginContext: game lock poisoned").clone()
     }
 
     // ── Event subscription ────────────────────────────────────────────────────
@@ -418,7 +407,11 @@ impl PluginContext {
     ///
     /// # Errors
     /// Currently always returns `Ok(())`. Reserved for future validation.
-    pub fn set_setting(&self, key: impl Into<String>, value: SettingValue) -> Result<(), PluginError> {
+    pub fn set_setting(
+        &self,
+        key: impl Into<String>,
+        value: SettingValue,
+    ) -> Result<(), PluginError> {
         self.settings
             .lock()
             .expect("PluginContext: settings lock poisoned")
@@ -473,9 +466,9 @@ impl PluginContext {
     /// - `message`: Message text shown to the user.
     pub fn notify(&self, level: NotifyLevel, message: &str) {
         match level {
-            NotifyLevel::Info    => tracing::info!("[plugin:{}] {}", self.plugin_id, message),
+            NotifyLevel::Info => tracing::info!("[plugin:{}] {}", self.plugin_id, message),
             NotifyLevel::Warning => tracing::warn!("[plugin:{}] {}", self.plugin_id, message),
-            NotifyLevel::Error   => tracing::error!("[plugin:{}] {}", self.plugin_id, message),
+            NotifyLevel::Error => tracing::error!("[plugin:{}] {}", self.plugin_id, message),
         }
     }
 
@@ -487,10 +480,7 @@ impl PluginContext {
     /// - `list`: Fresh snapshot of the mod list.
     #[allow(dead_code)]
     pub(crate) fn update_mod_list(&self, list: Vec<ModInfo>) {
-        *self
-            .mod_list
-            .write()
-            .expect("PluginContext: mod_list lock poisoned") = list;
+        *self.mod_list.write().expect("PluginContext: mod_list lock poisoned") = list;
     }
 
     /// Update the active profile. Called by the host on profile switch.
@@ -534,31 +524,31 @@ impl PluginContext {
 
 #[cfg(test)]
 mod tests {
+    use super::super::event::ModManagerEvent;
     use super::*;
     use crate::game::GameKind;
-    use super::super::event::ModManagerEvent;
 
     fn game_info() -> GameInfo {
         GameInfo {
-            slug:          "skyrim_se".into(),
-            name:          "Skyrim SE".into(),
-            kind:          GameKind::SkyrimSE,
-            steam_app_id:  489830,
-            install_path:  "/game".into(),
-            data_path:     "/game/Data".into(),
+            slug: "skyrim_se".into(),
+            name: "Skyrim SE".into(),
+            kind: GameKind::SkyrimSE,
+            steam_app_id: 489830,
+            install_path: "/game".into(),
+            data_path: "/game/Data".into(),
             proton_prefix: None,
         }
     }
 
     fn mod_info(slug: &str, enabled: bool) -> ModInfo {
         ModInfo {
-            id:          1,
-            slug:        slug.into(),
-            name:        slug.to_uppercase(),
-            version:     "1.0".into(),
-            author:      "Author".into(),
-            priority:    1,
-            is_enabled:  enabled,
+            id: 1,
+            slug: slug.into(),
+            name: slug.to_uppercase(),
+            version: "1.0".into(),
+            author: "Author".into(),
+            priority: 1,
+            is_enabled: enabled,
             install_dir: format!("/mods/{slug}"),
         }
     }
@@ -575,10 +565,7 @@ mod tests {
     fn settings_set_and_get_round_trip() {
         let ctx = PluginContext::for_tests();
         ctx.set_setting("notify_on_conflict", SettingValue::Bool(true)).unwrap();
-        assert_eq!(
-            ctx.get_setting("notify_on_conflict"),
-            Some(SettingValue::Bool(true)),
-        );
+        assert_eq!(ctx.get_setting("notify_on_conflict"), Some(SettingValue::Bool(true)),);
     }
 
     #[test]
@@ -648,10 +635,10 @@ mod tests {
     #[test]
     fn subscribe_via_context_fires_handler() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        let ctx   = PluginContext::for_tests();
+        let ctx = PluginContext::for_tests();
         let count = Arc::new(AtomicUsize::new(0));
-        let c     = Arc::clone(&count);
-        let _h    = ctx.subscribe(EventFilter::ProfileChanged, move |_| {
+        let c = Arc::clone(&count);
+        let _h = ctx.subscribe(EventFilter::ProfileChanged, move |_| {
             c.fetch_add(1, Ordering::Relaxed);
         });
         ctx.event_bus.publish(&ModManagerEvent::ProfileChanged {
@@ -666,7 +653,8 @@ mod tests {
     #[test]
     fn queue_download_without_capability_returns_error() {
         let ctx = PluginContext::for_tests();
-        let err = ctx.queue_download("https://example.com/mod.zip", std::path::Path::new("/tmp/mod.zip"));
+        let err =
+            ctx.queue_download("https://example.com/mod.zip", std::path::Path::new("/tmp/mod.zip"));
         assert!(matches!(err, Err(PluginError::CapabilityNotGranted(_))));
     }
 
@@ -675,10 +663,18 @@ mod tests {
         let mut caps = HashSet::new();
         caps.insert(Capability::Downloads);
         let ctx = PluginContext::new(
-            "test", vec![], "Default", vec![], None,
-            Arc::new(EventBus::new()), HashMap::new(), "/tmp", caps,
+            "test",
+            vec![],
+            "Default",
+            vec![],
+            None,
+            Arc::new(EventBus::new()),
+            HashMap::new(),
+            "/tmp",
+            caps,
         );
-        let err = ctx.queue_download("https://example.com/mod.zip", std::path::Path::new("/tmp/mod.zip"));
+        let err =
+            ctx.queue_download("https://example.com/mod.zip", std::path::Path::new("/tmp/mod.zip"));
         assert!(matches!(err, Err(PluginError::NetFeatureDisabled)));
     }
 }

@@ -31,7 +31,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk4::{glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, SearchEntry, Separator};
+use gtk4::{
+    glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, SearchEntry, Separator,
+};
 use libadwaita as adw;
 use mantle_core::{config::default_db_path, data::Database, Error as CoreError};
 
@@ -77,10 +79,7 @@ pub fn build(
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
 ) -> GtkBox {
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     // Shared search text — written by the SearchEntry, read by the filter func.
     let search_text: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
@@ -89,13 +88,7 @@ pub fn build(
     // invalidate_filter() on it.
     let list = mod_list_box(state, refresh, Rc::clone(&search_text));
 
-    outer.append(&toolbar_bar(
-        state,
-        &list,
-        Rc::clone(&search_text),
-        window,
-        toast_overlay,
-    ));
+    outer.append(&toolbar_bar(state, &list, Rc::clone(&search_text), window, toast_overlay));
     outer.append(&Separator::new(Orientation::Horizontal));
 
     if state.conflict_count > 0 {
@@ -141,10 +134,7 @@ fn toolbar_bar(
         .build();
 
     // Search entry — updates search_text and invalidates the ListBox filter.
-    let search = SearchEntry::builder()
-        .placeholder_text("Search mods…")
-        .hexpand(true)
-        .build();
+    let search = SearchEntry::builder().placeholder_text("Search mods…").hexpand(true).build();
     search.set_tooltip_text(Some("Filter the mod list by name"));
 
     let list_c = list.clone();
@@ -191,7 +181,11 @@ fn conflict_banner(state: &AppState) -> adw::Banner {
         .title(format!(
             "{} file {} detected — some mods override the same files",
             state.conflict_count,
-            if state.conflict_count == 1 { "conflict" } else { "conflicts" },
+            if state.conflict_count == 1 {
+                "conflict"
+            } else {
+                "conflicts"
+            },
         ))
         .button_label("Dismiss")
         .revealed(true)
@@ -295,9 +289,7 @@ fn mod_list_box(
     refresh: &Rc<dyn Fn()>,
     search_text: Rc<RefCell<String>>,
 ) -> ListBox {
-    let list = ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::Single)
-        .build();
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::Single).build();
     list.add_css_class("boxed-list");
 
     for (idx, entry) in state.mods.iter().enumerate() {
@@ -357,7 +349,11 @@ fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> gtk4::L
     let toggle = gtk4::Switch::new();
     toggle.set_active(entry.enabled);
     toggle.set_valign(gtk4::Align::Center);
-    toggle.set_tooltip_text(Some(if entry.enabled { "Disable this mod" } else { "Enable this mod" }));
+    toggle.set_tooltip_text(Some(if entry.enabled {
+        "Disable this mod"
+    } else {
+        "Enable this mod"
+    }));
     toggle.set_widget_name(&format!("switch-{}-{}", entry.profile_id, entry.mod_id));
 
     // Wire the switch: state-set → set_mod_enabled → refresh
