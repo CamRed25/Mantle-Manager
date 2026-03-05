@@ -117,9 +117,7 @@ pub fn scan_themes_dir(themes_dir: &Path) -> Vec<UserTheme> {
         Ok(rd) => rd
             .filter_map(Result::ok)
             .map(|e| e.path())
-            .filter(|p| {
-                p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("css")
-            })
+            .filter(|p| p.is_file() && p.extension().and_then(|e| e.to_str()) == Some("css"))
             .collect(),
         Err(err) => {
             warn!(
@@ -132,9 +130,8 @@ pub fn scan_themes_dir(themes_dir: &Path) -> Vec<UserTheme> {
     };
 
     // Alphabetical load order — consistent and predictable.
-    entries.sort_by(|a, b| {
-        a.file_name().unwrap_or_default().cmp(b.file_name().unwrap_or_default())
-    });
+    entries
+        .sort_by(|a, b| a.file_name().unwrap_or_default().cmp(b.file_name().unwrap_or_default()));
 
     entries.iter().filter_map(|path| load_theme(path)).collect()
 }
@@ -146,11 +143,7 @@ pub fn scan_themes_dir(themes_dir: &Path) -> Vec<UserTheme> {
 /// Returns `None` if the CSS file cannot be read (logged as a warning).
 fn load_theme(css_path: &Path) -> Option<UserTheme> {
     // Theme ID = filename stem.
-    let id = css_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown")
-        .to_owned();
+    let id = css_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown").to_owned();
 
     // Read CSS content.
     let css = match std::fs::read_to_string(css_path) {
@@ -170,9 +163,7 @@ fn load_theme(css_path: &Path) -> Option<UserTheme> {
         name: manifest.name.clone().unwrap_or_else(|| id.clone()),
         author: manifest.author.unwrap_or_default(),
         description: manifest.description.unwrap_or_default(),
-        color_scheme: manifest
-            .color_scheme
-            .unwrap_or_else(|| "auto".to_owned()),
+        color_scheme: manifest.color_scheme.unwrap_or_else(|| "auto".to_owned()),
         id,
         css,
     })

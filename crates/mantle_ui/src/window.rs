@@ -69,8 +69,7 @@ pub fn build_ui(app: &adw::Application) {
     let initial_settings = AppSettings::load_or_default(&settings_path).unwrap_or_default();
 
     // Scan user themes so we can resolve CSS for a Custom theme at startup.
-    let themes_dir =
-        mantle_core::theme::themes_data_dir(&mantle_core::config::data_dir());
+    let themes_dir = mantle_core::theme::themes_data_dir(&mantle_core::config::data_dir());
     let user_themes = mantle_core::theme::scan_themes_dir(&themes_dir);
     let custom_css: Option<(String, bool)> =
         if let mantle_core::config::Theme::Custom(ref id) = initial_settings.ui.theme {
@@ -328,7 +327,8 @@ fn build_main_content(
         stack.add_titled(&mods::build(state, window, refresh, toast_overlay), Some("mods"), "Mods");
     mods_page.set_icon_name(Some("application-x-addon-symbolic"));
 
-    let plugins_page = stack.add_titled(&plugins::build(state), Some("plugins"), "Plugins");
+    let plugins_page =
+        stack.add_titled(&plugins::build(state, window, refresh), Some("plugins"), "Plugins");
     plugins_page.set_icon_name(Some("application-x-executable-symbolic"));
 
     let downloads_page = stack.add_titled(&downloads::build(state), Some("downloads"), "Downloads");

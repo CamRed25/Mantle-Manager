@@ -35,7 +35,7 @@ use mantle_core::{
     game, mod_list, vfs,
 };
 
-use crate::state::{AppState, ModEntry, ProfileEntry};
+use crate::state::{AppState, ModEntry, ProfileEntry, ThemeEntry};
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ fn load_state() -> anyhow::Result<AppState> {
     // ── Config (for future game detection — currently unused here) ────────
     // AppSettings::load_or_default is called at startup for theme only.
     // Keeping this call so future items can read game paths etc.
-    let _settings: AppSettings = {
+    let settings: AppSettings = {
         use mantle_core::config::default_settings_path;
         AppSettings::load_or_default(&default_settings_path()).unwrap_or_default()
     };
@@ -198,8 +198,7 @@ fn load_state() -> anyhow::Result<AppState> {
         // Download queue lives in-memory only; no DB persistence yet.
         downloads: vec![],
         plugins: plugin_entries,
-        // User themes are discovered from disk at startup; deferred to item t.
-        themes: vec![],
+        themes: load_themes(&settings.ui.theme),
         // Data directory used as the VFS merge_dir target during launch mount.
         game_data_path: first_game.as_ref().map(|g| g.data_path.clone()),
     })
@@ -287,6 +286,107 @@ fn build_mod_list_with_conflicts(
         .collect();
 
     Ok((entries, count, total_file_conflicts))
+}
+
+/// Build the full theme list: built-in entries first, then user-installed.
+///
+/// Built-in CSS themes (Catppuccin, Nord, Skyrim, Fallout) are always present
+/// so users can see reference implementations and apply them without going to
+/// the Settings dialog.  User themes are discovered from the themes directory.
+///
+/// # Parameters
+/// - `active_theme`: Current saved [`Theme`] variant; used to set
+///   [`ThemeEntry::active`] on the matching entry.
+fn load_themes(active_theme: &mantle_core::config::Theme) -> Vec<ThemeEntry> {
+    use crate::settings::{
+        builtin_id_to_theme, CATPPUCCIN_LATTE_CSS, CATPPUCCIN_MOCHA_CSS, FALLOUT_CSS, NORD_CSS,
+        SKYRIM_CSS,
+    };
+    use mantle_core::config::Theme;
+
+    let mut themes: Vec<ThemeEntry> = Vec::new();
+
+    // ── Built-in themes ───────────────────────────────────────────────────────
+    let builtins: &[(&str, &str, &str, &str, &str, &str)] = &[
+        (
+            "catppuccin-mocha",
+            "Catppuccin Mocha",
+            "Catppuccin",
+            "Soothing pastel theme — dark variant.",
+            "dark",
+            CATPPUCCIN_MOCHA_CSS,
+        ),
+        (
+            "catppuccin-latte",
+            "Catppuccin Latte",
+            "Catppuccin",
+            "Soothing pastel theme — light variant.",
+            "light",
+            CATPPUCCIN_LATTE_CSS,
+        ),
+        (
+            "nord",
+            "Nord",
+            "Arctic Ice Studio",
+            "An arctic, north-bluish colour palette.",
+            "dark",
+            NORD_CSS,
+        ),
+        (
+            "skyrim",
+            "Skyrim",
+            "Mantle Team",
+            "Nordic dark theme inspired by The Elder Scrolls V.",
+            "dark",
+            SKYRIM_CSS,
+        ),
+        (
+            "fallout",
+            "Fallout",
+            "Mantle Team",
+            "Retro terminal green-on-black inspired by Fallout.",
+            "dark",
+            FALLOUT_CSS,
+        ),
+    ];
+
+    for &(id, name, author, description, color_scheme, css) in builtins {
+        let is_active = builtin_id_to_theme(id).is_some_and(|t| t == *active_theme);
+        themes.push(ThemeEntry {
+            id: id.to_string(),
+            name: name.to_string(),
+            author: author.to_string(),
+            description: description.to_string(),
+            color_scheme: color_scheme.to_string(),
+            css: css.to_string(),
+            active: is_active,
+            builtin: true,
+        });
+    }
+
+    // ── User-installed themes ─────────────────────────────────────────────────
+    let themes_dir = mantle_core::theme::themes_data_dir(&mantle_core::config::data_dir());
+    let active_custom_id: Option<&str> = if let Theme::Custom(ref id) = active_theme {
+        Some(id.as_str())
+    } else {
+        None
+    };
+
+    for t in mantle_core::theme::scan_themes_dir(&themes_dir) {
+        let is_active = active_custom_id.is_some_and(|aid| aid == t.id);
+        themes.push(ThemeEntry {
+            id: t.id,
+            name: t.name,
+            author: t.author,
+            description: t.description,
+            color_scheme: t.color_scheme,
+            css: t.css,
+            active: is_active,
+            builtin: false,
+        });
+    }
+
+    themes
 }
 
 /// Scan `{data_dir}/plugins/`, load every `.so` and `.rhai` plugin, and return

@@ -64,10 +64,7 @@ pub fn build(
     }
 
     // adw::Clamp keeps content readable on ultra-wide screens.
-    let clamp = adw::Clamp::builder()
-        .maximum_size(860)
-        .tightening_threshold(600)
-        .build();
+    let clamp = adw::Clamp::builder().maximum_size(860).tightening_threshold(600).build();
 
     let content = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -168,10 +165,7 @@ fn hero_card(state: &AppState) -> GtkBox {
 /// Each tile is a `.card` with a large `title-2` number and a dim caption.
 /// The conflicts tile uses the `warning` CSS class when `conflict_count > 0`.
 fn stat_tiles(state: &AppState) -> GtkBox {
-    let row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
+    let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
 
     row.append(&stat_tile(&state.mod_count.to_string(), "mods", false));
     row.append(&stat_tile(&state.plugin_count.to_string(), "plugins", false));
@@ -235,17 +229,13 @@ fn stat_tile(value: &str, caption: &str, warning: bool) -> GtkBox {
 /// with mod/plugin count subtitle and a profile-switcher [`gtk4::MenuButton`]
 /// in the suffix slot.
 fn profile_section(state: &AppState, refresh: &Rc<dyn Fn()>) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title("Active Profile")
-        .build();
+    let group = adw::PreferencesGroup::builder().title("Active Profile").build();
 
     // Resolve the active profile entry; fall back to state fields if not found.
-    let active = state.profiles.iter().find(|p| p.active)
-        .or_else(|| state.profiles.first());
-    let (name, mod_count) = active
-        .map_or((state.active_profile.as_str(), state.mod_count), |p| {
-            (p.name.as_str(), p.mod_count)
-        });
+    let active = state.profiles.iter().find(|p| p.active).or_else(|| state.profiles.first());
+    let (name, mod_count) = active.map_or((state.active_profile.as_str(), state.mod_count), |p| {
+        (p.name.as_str(), p.mod_count)
+    });
 
     let row = adw::ActionRow::builder()
         .title(name)
@@ -279,9 +269,7 @@ fn profile_switcher_button(state: &AppState, refresh: &Rc<dyn Fn()>) -> gtk4::Me
         .build();
     btn.add_css_class("flat");
 
-    let list = gtk4::ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build();
+    let list = gtk4::ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for profile in &state.profiles {
@@ -350,9 +338,7 @@ fn profile_popover_row(
     row.connect_activate(move |_| {
         btn_c.popdown();
         match with_db(|db| {
-            db.with_conn(|conn| {
-                mantle_core::data::profiles::set_active_profile(conn, profile_id)
-            })
+            db.with_conn(|conn| mantle_core::data::profiles::set_active_profile(conn, profile_id))
         }) {
             Ok(()) => refresh_c(),
             Err(e) => tracing::warn!("overview: set_active_profile failed: {e}"),
@@ -395,9 +381,7 @@ fn mod_list_section(
     view_all.add_css_class("flat");
     view_all.connect_clicked(move |_| navigate_to_mods());
 
-    let group = adw::PreferencesGroup::builder()
-        .title("Active Mods")
-        .build();
+    let group = adw::PreferencesGroup::builder().title("Active Mods").build();
     group.set_header_suffix(Some(&view_all));
 
     for entry in state.mods.iter().take(6) {
@@ -416,9 +400,7 @@ fn mod_list_section(
 ///
 /// Switch `state-set` → [`mod_list::set_mod_enabled`] → `refresh()`.
 fn mod_action_row(entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
-        .title(&entry.name)
-        .build();
+    let row = adw::ActionRow::builder().title(&entry.name).build();
 
     if let Some(ver) = &entry.version {
         row.set_subtitle(ver.as_str());
@@ -428,7 +410,11 @@ fn mod_action_row(entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> adw::ActionRow {
     let toggle = Switch::new();
     toggle.set_active(entry.enabled);
     toggle.set_valign(Align::Center);
-    toggle.set_tooltip_text(Some(if entry.enabled { "Disable mod" } else { "Enable mod" }));
+    toggle.set_tooltip_text(Some(if entry.enabled {
+        "Disable mod"
+    } else {
+        "Enable mod"
+    }));
     row.add_prefix(&toggle);
     row.set_activatable_widget(Some(&toggle));
 

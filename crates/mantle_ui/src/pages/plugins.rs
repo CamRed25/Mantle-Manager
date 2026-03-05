@@ -5,21 +5,25 @@
 //!
 //! - **Plugins** — existing list of loaded Mantle plugins with enable/disable
 //!   switches and inline settings panels.
-//! - **Themes** — user-installed CSS themes with Apply / active indicators and
-//!   a folder-open shortcut for dropping new theme files.
+//! - **Themes** — all available themes: built-in (Apply only) and
+//!   user-installed (Apply + Delete).  Selecting a theme here is the primary
+//!   way to change the app look; the Settings › Appearance combo only covers
+//!   the three native libadwaita modes.
 //!
 //! # References
 //! - `standards/UI_GUIDE.md` §3, §5.1, §5.3, §9
 //! - `standards/PLUGIN_API.md` §6–8
 //! - `path.md` item u
 
+use std::rc::Rc;
+
 use adw::prelude::*;
 use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, Separator, Switch};
 use libadwaita as adw;
 use mantle_core::config::Theme;
 
-use crate::settings::{apply_theme, save_settings};
-use crate::state::{AppState, PluginEntry, PluginSettingEntry, UserThemeEntry};
+use crate::settings::{apply_theme, builtin_id_to_theme, save_settings};
+use crate::state::{AppState, PluginEntry, PluginSettingEntry, ThemeEntry};
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -30,7 +34,11 @@ use crate::state::{AppState, PluginEntry, PluginSettingEntry, UserThemeEntry};
 ///
 /// # Parameters
 /// - `state`: Read-only application state snapshot.
-pub fn build(state: &AppState) -> GtkBox {
+/// - `window`: Main window; used as transient parent for the theme-delete
+///   confirmation dialog.
+/// - `refresh`: Callback invoked after a user theme is deleted so the page
+///   rebuilds with the updated theme list.
+pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn Fn()>) -> GtkBox {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     // ── Inner stack switcher ──────────────────────────────────────────────────
@@ -55,7 +63,7 @@ pub fn build(state: &AppState) -> GtkBox {
     stack.add_titled(&plugins_page, Some("plugins"), "Plugins");
 
     // ── Themes sub-page ──────────────────────────────────────────────────────
-    let themes_page = themes_subpage(state);
+    let themes_page = themes_subpage(state, window, refresh);
     stack.add_titled(&themes_page, Some("themes"), "Themes");
 
     outer
@@ -242,13 +250,17 @@ fn setting_row(setting: &PluginSettingEntry) -> adw::ActionRow {
 // Themes sub-page
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn themes_subpage(state: &AppState) -> GtkBox {
+fn themes_subpage(
+    state: &AppState,
+    window: &adw::ApplicationWindow,
+    refresh: &Rc<dyn Fn()>,
+) -> GtkBox {
     let page = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
     page.append(&themes_toolbar(state));
     if state.themes.is_empty() {
         page.append(&themes_empty_state());
     } else {
-        page.append(&themes_scroll(state));
+        page.append(&themes_scroll(state, window, refresh));
     }
     page
 }
@@ -265,7 +277,12 @@ fn themes_toolbar(state: &AppState) -> GtkBox {
         .margin_end(12)
         .build();
 
-    let count = Label::new(Some(&format!("{} installed", state.themes.len())));
+    let user_count = state.themes.iter().filter(|t| !t.builtin).count();
+    let count = Label::new(Some(&format!(
+        "{} built-in · {} installed",
+        state.themes.iter().filter(|t| t.builtin).count(),
+        user_count,
+    )));
     count.add_css_class("caption");
     count.add_css_class("dim-label");
     count.set_hexpand(true);
@@ -288,7 +305,7 @@ fn themes_toolbar(state: &AppState) -> GtkBox {
 fn themes_empty_state() -> adw::StatusPage {
     adw::StatusPage::builder()
         .icon_name("applications-graphics-symbolic")
-        .title("No Themes Installed")
+        .title("No Themes")
         .description(
             "Drop a .css file into the themes folder to install a theme.\n\
              An optional theme.toml alongside it provides name and author metadata.",
@@ -299,7 +316,11 @@ fn themes_empty_state() -> adw::StatusPage {
 
 // ─── Scrollable theme list ────────────────────────────────────────────────────
 
-fn themes_scroll(state: &AppState) -> ScrolledWindow {
+fn themes_scroll(
+    state: &AppState,
+    window: &adw::ApplicationWindow,
+    refresh: &Rc<dyn Fn()>,
+) -> ScrolledWindow {
     let scroll = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
@@ -308,50 +329,68 @@ fn themes_scroll(state: &AppState) -> ScrolledWindow {
 
     let content = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(0)
+        .spacing(12)
         .margin_top(12)
         .margin_bottom(12)
         .margin_start(12)
         .margin_end(12)
         .build();
 
-    content.append(&theme_list(state));
+    // Built-in themes section
+    let builtin_entries: Vec<&ThemeEntry> = state.themes.iter().filter(|t| t.builtin).collect();
+    if !builtin_entries.is_empty() {
+        let builtin_list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
+        builtin_list.add_css_class("boxed-list");
+        for entry in builtin_entries {
+            builtin_list.append(&theme_row(entry, window, refresh));
+        }
+        content.append(&builtin_list);
+    }
+
+    // User-installed themes section
+    let user_entries: Vec<&ThemeEntry> = state.themes.iter().filter(|t| !t.builtin).collect();
+    if !user_entries.is_empty() {
+        let user_label = Label::new(Some("Installed"));
+        user_label.add_css_class("heading");
+        user_label.set_halign(gtk4::Align::Start);
+        user_label.set_margin_top(4);
+        content.append(&user_label);
+
+        let user_list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
+        user_list.add_css_class("boxed-list");
+        for entry in user_entries {
+            user_list.append(&theme_row(entry, window, refresh));
+        }
+        content.append(&user_list);
+    }
+
     scroll.set_child(Some(&content));
     scroll
 }
 
-/// Builds the [`ListBox`] containing one row per installed user theme.
-fn theme_list(state: &AppState) -> ListBox {
-    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
-    list.add_css_class("boxed-list");
-
-    for entry in &state.themes {
-        list.append(&theme_row(entry));
-    }
-
-    list
-}
-
 // ─── Theme row ────────────────────────────────────────────────────────────────
 
-/// Build an [`adw::ActionRow`] for a single user theme.
+/// Build an [`adw::ActionRow`] for a single theme entry.
 ///
 /// Layout:
 /// ```text
-/// ╭─────────────────────────────────────────────────────╮
-/// │ [Theme Name]   [author]          [Apply] or [Active] │
-/// │ [description]                                        │
-/// ╰─────────────────────────────────────────────────────╯
+/// ╭────────────────────────────────────────────────────────────────╮
+/// │ [Theme Name]   [author — description]  [Built-in?] [Apply/✓] │
+/// │                                                    [Delete?]  │
+/// ╰────────────────────────────────────────────────────────────────╯
 /// ```
 ///
-/// Active theme shows a "Applied ✓" dim label instead of a button.
-/// Clicking Apply writes `Theme::Custom(id)` to settings and immediately
-/// applies the CSS.  Full settings-file persistence wired in item y.
-fn theme_row(entry: &UserThemeEntry) -> adw::ActionRow {
+/// - Built-in themes: "Built-in" badge + Apply (or "Applied ✓").  No delete.
+/// - User themes: Apply (or "Applied ✓") + trash-icon Delete button.
+fn theme_row(
+    entry: &ThemeEntry,
+    window: &adw::ApplicationWindow,
+    refresh: &Rc<dyn Fn()>,
+) -> adw::ActionRow {
     let row = adw::ActionRow::builder().title(&entry.name).build();
     row.set_widget_name(&entry.id);
 
-    // Subtitle: author only if present, else description only.
+    // Subtitle: "author — description" (skip empty halves).
     let subtitle = match (entry.author.is_empty(), entry.description.is_empty()) {
         (false, false) => format!("{} — {}", entry.author, entry.description),
         (false, true) => entry.author.clone(),
@@ -362,8 +401,17 @@ fn theme_row(entry: &UserThemeEntry) -> adw::ActionRow {
         row.set_subtitle(&subtitle);
     }
 
+    // "Built-in" badge — shown before the Apply/status widget.
+    if entry.builtin {
+        let badge = Label::new(Some("Built-in"));
+        badge.add_css_class("caption");
+        badge.add_css_class("dim-label");
+        badge.set_valign(gtk4::Align::Center);
+        row.add_suffix(&badge);
+    }
+
+    // Apply button or "Applied ✓" indicator.
     if entry.active {
-        // Active indicator — no action button.
         let active_label = Label::new(Some("Applied ✓"));
         active_label.add_css_class("caption");
         active_label.add_css_class("dim-label");
@@ -371,34 +419,123 @@ fn theme_row(entry: &UserThemeEntry) -> adw::ActionRow {
         active_label.set_valign(gtk4::Align::Center);
         row.add_suffix(&active_label);
     } else {
-        // Apply button — activates this theme immediately.
-        let apply_btn = gtk4::Button::builder()
-            .label("Apply")
-            .valign(gtk4::Align::Center)
-            .build();
+        let apply_btn = gtk4::Button::builder().label("Apply").valign(gtk4::Align::Center).build();
         apply_btn.add_css_class("flat");
 
-        let id = entry.id.clone();
-        let css = entry.css.clone();
-        let is_dark = entry.color_scheme != "light";
-
-        apply_btn.connect_clicked(move |_| {
-            let theme = Theme::Custom(id.clone());
-            // Apply the CSS immediately.
-            apply_theme(&theme, Some((css.as_str(), is_dark)));
-            // Persist the choice.  settings_path() resolves at call time so
-            // we use the same helper the settings dialog uses.
-            let settings_path = mantle_core::config::default_settings_path();
-            if let Ok(mut settings) =
-                mantle_core::config::AppSettings::load_or_default(&settings_path)
-            {
-                settings.ui.theme = theme;
-                save_settings(&settings, &settings_path);
-            }
-        });
+        if entry.builtin {
+            // Built-in themes map directly to a Theme enum variant.
+            let id = entry.id.clone();
+            apply_btn.connect_clicked(move |_| {
+                if let Some(theme) = builtin_id_to_theme(&id) {
+                    apply_theme(&theme, None);
+                    let settings_path = mantle_core::config::default_settings_path();
+                    if let Ok(mut settings) =
+                        mantle_core::config::AppSettings::load_or_default(&settings_path)
+                    {
+                        settings.ui.theme = theme;
+                        save_settings(&settings, &settings_path);
+                    }
+                }
+            });
+        } else {
+            // User themes use Theme::Custom(id) + inline CSS.
+            let id = entry.id.clone();
+            let css = entry.css.clone();
+            let is_dark = entry.color_scheme != "light";
+            apply_btn.connect_clicked(move |_| {
+                let theme = Theme::Custom(id.clone());
+                apply_theme(&theme, Some((css.as_str(), is_dark)));
+                let settings_path = mantle_core::config::default_settings_path();
+                if let Ok(mut settings) =
+                    mantle_core::config::AppSettings::load_or_default(&settings_path)
+                {
+                    settings.ui.theme = theme;
+                    save_settings(&settings, &settings_path);
+                }
+            });
+        }
 
         row.add_suffix(&apply_btn);
     }
 
+    // Delete button — user themes only.
+    if !entry.builtin {
+        let delete_btn = gtk4::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .tooltip_text("Delete theme")
+            .valign(gtk4::Align::Center)
+            .build();
+        delete_btn.add_css_class("flat");
+
+        let id = entry.id.clone();
+        let name = entry.name.clone();
+        let window_clone = window.clone();
+        let refresh_clone = Rc::clone(refresh);
+        delete_btn.connect_clicked(move |_| {
+            show_delete_theme_dialog(&window_clone, &name, &id, Rc::clone(&refresh_clone));
+        });
+
+        row.add_suffix(&delete_btn);
+    }
+
     row
+}
+
+// ─── Delete helpers ───────────────────────────────────────────────────────────
+
+/// Show a confirmation dialog before permanently deleting a user theme.
+fn show_delete_theme_dialog(
+    window: &adw::ApplicationWindow,
+    theme_name: &str,
+    theme_id: &str,
+    refresh: Rc<dyn Fn()>,
+) {
+    let dialog = adw::MessageDialog::builder()
+        .heading("Delete Theme?")
+        .body(format!(
+            "\"{theme_name}\" will be permanently removed from your themes folder."
+        ))
+        .transient_for(window)
+        .build();
+
+    dialog.add_response("cancel", "Cancel");
+    dialog.add_response("delete", "Delete");
+    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+    dialog.set_default_response(Some("cancel"));
+    dialog.set_close_response("cancel");
+
+    let id = theme_id.to_string();
+    dialog.connect_response(Some("delete"), move |_, _| {
+        delete_theme_files(&id);
+        refresh();
+    });
+
+    dialog.present();
+}
+
+/// Remove a user theme's CSS (and optional TOML manifest) from disk.
+///
+/// If the deleted theme was the active one, resets the saved preference to
+/// `Theme::Auto` and immediately applies the default color scheme so the UI
+/// doesn't remain styled with a deleted theme's CSS.
+fn delete_theme_files(theme_id: &str) {
+    let themes_dir = mantle_core::theme::themes_data_dir(&mantle_core::config::data_dir());
+    let css_path = themes_dir.join(format!("{theme_id}.css"));
+    let toml_path = themes_dir.join(format!("{theme_id}.toml"));
+
+    if let Err(e) = std::fs::remove_file(&css_path) {
+        tracing::warn!("delete_theme: failed to remove {}: {e}", css_path.display());
+    }
+    // TOML manifest is optional — silently ignore if absent.
+    let _ = std::fs::remove_file(&toml_path);
+
+    // If the deleted theme was active, fall back to System Default.
+    let settings_path = mantle_core::config::default_settings_path();
+    if let Ok(mut settings) = mantle_core::config::AppSettings::load_or_default(&settings_path) {
+        if matches!(&settings.ui.theme, Theme::Custom(id) if id == theme_id) {
+            settings.ui.theme = Theme::Auto;
+            save_settings(&settings, &settings_path);
+            apply_theme(&Theme::Auto, None);
+        }
+    }
 }

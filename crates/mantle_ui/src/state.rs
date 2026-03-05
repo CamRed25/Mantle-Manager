@@ -23,8 +23,8 @@ pub struct AppState {
     pub downloads: Vec<DownloadEntry>,
     /// Loaded Mantle plugins, in load order.
     pub plugins: Vec<PluginEntry>,
-    /// User-installed themes discovered in `{data_dir}/themes/`.
-    pub themes: Vec<UserThemeEntry>,
+    /// Themes available in the Themes tab (built-in + user-installed).
+    pub themes: Vec<ThemeEntry>,
     /// Filesystem path to the game's Data directory.
     ///
     /// Used as the VFS `merge_dir` target when mounting mods before launch.
@@ -72,13 +72,14 @@ pub struct DownloadEntry {
 
 // ─── Theme types ──────────────────────────────────────────────────────────────
 
-/// Display snapshot for a single user-installed theme.
-pub struct UserThemeEntry {
-    /// Stable ID derived from the CSS filename stem.
+/// Display snapshot for a single theme — built-in or user-installed.
+pub struct ThemeEntry {
+    /// Stable ID.  For built-in themes this is the kebab-case name
+    /// (e.g. `"catppuccin-mocha"`); for user themes it is the CSS filename stem.
     pub id: String,
     /// Human-readable display name (from manifest or falls back to id).
     pub name: String,
-    /// Author / maintainer name (empty when not specified).
+    /// Author / maintainer name (empty for built-in themes).
     pub author: String,
     /// Short description (empty when not specified).
     pub description: String,
@@ -88,6 +89,8 @@ pub struct UserThemeEntry {
     pub css: String,
     /// Whether this is the currently active theme.
     pub active: bool,
+    /// `true` for themes shipped with Mantle Manager that cannot be deleted.
+    pub builtin: bool,
 }
 
 // ─── Plugin types ─────────────────────────────────────────────────────────────
@@ -193,7 +196,59 @@ impl AppState {
                 },
             ],
             themes: vec![
-                UserThemeEntry {
+                // ── Built-in themes ─────────────────────────────────────────
+                ThemeEntry {
+                    id: "catppuccin-mocha".to_string(),
+                    name: "Catppuccin Mocha".to_string(),
+                    author: "Catppuccin".to_string(),
+                    description: "Soothing pastel theme — dark variant.".to_string(),
+                    color_scheme: "dark".to_string(),
+                    css: String::new(), // applied via built-in Theme variant
+                    active: false,
+                    builtin: true,
+                },
+                ThemeEntry {
+                    id: "catppuccin-latte".to_string(),
+                    name: "Catppuccin Latte".to_string(),
+                    author: "Catppuccin".to_string(),
+                    description: "Soothing pastel theme — light variant.".to_string(),
+                    color_scheme: "light".to_string(),
+                    css: String::new(),
+                    active: false,
+                    builtin: true,
+                },
+                ThemeEntry {
+                    id: "nord".to_string(),
+                    name: "Nord".to_string(),
+                    author: "Arctic Ice Studio".to_string(),
+                    description: "An arctic, north-bluish colour palette.".to_string(),
+                    color_scheme: "dark".to_string(),
+                    css: String::new(),
+                    active: false,
+                    builtin: true,
+                },
+                ThemeEntry {
+                    id: "skyrim".to_string(),
+                    name: "Skyrim".to_string(),
+                    author: "Mantle Team".to_string(),
+                    description: "Nordic dark theme inspired by The Elder Scrolls V.".to_string(),
+                    color_scheme: "dark".to_string(),
+                    css: String::new(),
+                    active: false,
+                    builtin: true,
+                },
+                ThemeEntry {
+                    id: "fallout".to_string(),
+                    name: "Fallout".to_string(),
+                    author: "Mantle Team".to_string(),
+                    description: "Retro terminal green-on-black inspired by Fallout.".to_string(),
+                    color_scheme: "dark".to_string(),
+                    css: String::new(),
+                    active: false,
+                    builtin: true,
+                },
+                // ── Example user-installed themes ───────────────────────────
+                ThemeEntry {
                     id: "gruvbox-dark".to_string(),
                     name: "Gruvbox Dark".to_string(),
                     author: "Community".to_string(),
@@ -201,8 +256,9 @@ impl AppState {
                     color_scheme: "dark".to_string(),
                     css: "@define-color accent_color #d79921;".to_string(),
                     active: false,
+                    builtin: false,
                 },
-                UserThemeEntry {
+                ThemeEntry {
                     id: "solarized-light".to_string(),
                     name: "Solarized Light".to_string(),
                     author: "Ethan Schoonover".to_string(),
@@ -210,6 +266,7 @@ impl AppState {
                     color_scheme: "light".to_string(),
                     css: "@define-color accent_color #268bd2;".to_string(),
                     active: false,
+                    builtin: false,
                 },
             ],
             game_data_path: None,

@@ -32,7 +32,7 @@ use mantle_core::config::{AppSettings, Theme};
 // so libadwaita's own widget chrome (switches, progress bars, etc.) renders
 // correctly before our overrides are applied.
 
-const CATPPUCCIN_MOCHA_CSS: &str = r"
+pub const CATPPUCCIN_MOCHA_CSS: &str = r"
 @define-color window_bg_color  #1E1E2E;
 @define-color window_fg_color  #CDD6F4;
 @define-color view_bg_color    #181825;
@@ -49,7 +49,7 @@ const CATPPUCCIN_MOCHA_CSS: &str = r"
 @define-color accent_color     #CBA6F7;
 ";
 
-const CATPPUCCIN_LATTE_CSS: &str = r"
+pub const CATPPUCCIN_LATTE_CSS: &str = r"
 @define-color window_bg_color  #EFF1F5;
 @define-color window_fg_color  #4C4F69;
 @define-color view_bg_color    #E6E9EF;
@@ -66,7 +66,7 @@ const CATPPUCCIN_LATTE_CSS: &str = r"
 @define-color accent_color     #8839EF;
 ";
 
-const NORD_CSS: &str = r"
+pub const NORD_CSS: &str = r"
 @define-color window_bg_color  #2E3440;
 @define-color window_fg_color  #ECEFF4;
 @define-color view_bg_color    #242933;
@@ -83,7 +83,7 @@ const NORD_CSS: &str = r"
 @define-color accent_color     #88C0D0;
 ";
 
-const SKYRIM_CSS: &str = r"
+pub const SKYRIM_CSS: &str = r"
 @define-color window_bg_color  #1A1A24;
 @define-color window_fg_color  #E8D5A3;
 @define-color view_bg_color    #141418;
@@ -100,7 +100,7 @@ const SKYRIM_CSS: &str = r"
 @define-color accent_color     #C9A227;
 ";
 
-const FALLOUT_CSS: &str = r"
+pub const FALLOUT_CSS: &str = r"
 @define-color window_bg_color  #0A0F0A;
 @define-color window_fg_color  #3ECC3E;
 @define-color view_bg_color    #060A06;
@@ -235,6 +235,27 @@ fn apply_theme_css(css: &str) {
     });
 }
 
+// ─── Built-in theme helpers ───────────────────────────────────────────────────
+
+/// Map a built-in theme ID string to its [`Theme`] enum variant.
+///
+/// Used by the Themes tab Apply button so clicking a built-in theme row
+/// activates the correct `Theme` variant (with its pre-set color scheme and
+/// embedded CSS) rather than `Theme::Custom`.
+///
+/// Returns `None` for unknown IDs — caller should fall back to
+/// [`Theme::Custom`] for user themes.
+pub fn builtin_id_to_theme(id: &str) -> Option<Theme> {
+    match id {
+        "catppuccin-mocha" => Some(Theme::CatppuccinMocha),
+        "catppuccin-latte" => Some(Theme::CatppuccinLatte),
+        "nord" => Some(Theme::Nord),
+        "skyrim" => Some(Theme::Skyrim),
+        "fallout" => Some(Theme::Fallout),
+        _ => None,
+    }
+}
+
 // ─── Appearance page ──────────────────────────────────────────────────────────
 
 /// Build the "Appearance" preferences page.
@@ -257,16 +278,9 @@ fn build_appearance_page(
     // ── Color scheme ──────────────────────────────────────────────────────
     let scheme_group = adw::PreferencesGroup::builder().title("Color Scheme").build();
 
-    let model = gtk4::StringList::new(&[
-        "System default",
-        "Light",
-        "Dark",
-        "Catppuccin Mocha",
-        "Catppuccin Latte",
-        "Nord",
-        "Skyrim",
-        "Fallout",
-    ]);
+    // CSS-palette themes are managed from the Plugins › Themes tab so the
+    // combo row stays minimal: just the three native libadwaita modes.
+    let model = gtk4::StringList::new(&["System default", "Light", "Dark"]);
     let theme_row = adw::ComboRow::builder()
         .title("Color scheme")
         .subtitle("Override the system color scheme preference")
@@ -457,21 +471,14 @@ fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::P
 
 /// Map a [`Theme`] variant to its position in the combo-row model.
 ///
-/// [`Theme::Custom`] maps to 0 (System default) so the combo row degrades
-/// gracefully when a user theme is active — the user selects custom themes
-/// from the Plugins › Themes tab instead.
+/// CSS-palette themes (Catppuccin, Nord, Skyrim, Fallout) and
+/// [`Theme::Custom`] all degrade to 0 ("System default") because those
+/// themes are now selected from the Plugins › Themes tab.
 fn theme_index(theme: &Theme) -> u32 {
     match theme {
-        // Custom themes managed via the Themes tab — degrade the combo to
-        // "System default" (0) so it does not show a stale built-in selection.
-        Theme::Auto | Theme::Custom(_) => 0,
         Theme::Light => 1,
         Theme::Dark => 2,
-        Theme::CatppuccinMocha => 3,
-        Theme::CatppuccinLatte => 4,
-        Theme::Nord => 5,
-        Theme::Skyrim => 6,
-        Theme::Fallout => 7,
+        _ => 0,
     }
 }
 
@@ -480,11 +487,6 @@ fn theme_from_index(idx: u32) -> Theme {
     match idx {
         1 => Theme::Light,
         2 => Theme::Dark,
-        3 => Theme::CatppuccinMocha,
-        4 => Theme::CatppuccinLatte,
-        5 => Theme::Nord,
-        6 => Theme::Skyrim,
-        7 => Theme::Fallout,
         _ => Theme::Auto,
     }
 }
