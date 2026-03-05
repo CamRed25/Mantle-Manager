@@ -12,8 +12,16 @@ env:
 
 jobs:
   build-and-test:
-    name: Build, Test, Clippy, Fmt
+    name: Build, Test, Clippy, Fmt (${{ matrix.toolchain }})
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        toolchain: [stable, beta]
+      fail-fast: false
+
+    # Beta regressions (new lints, minor breakage) must not block stable CI.
+    continue-on-error: ${{ matrix.toolchain == 'beta' }}
 
     steps:
       - name: Checkout
@@ -29,9 +37,10 @@ jobs:
             fuse-overlayfs \
             libssl-dev
 
-      - name: Install Rust stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust ${{ matrix.toolchain }} toolchain
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ matrix.toolchain }}
           components: clippy, rustfmt
 
       - name: Cache Cargo registry and build
@@ -41,11 +50,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-${{ matrix.toolchain }}-cargo-
 
+      # rustfmt output is stable across toolchains, but only enforce on stable
+      # to avoid spurious failures if the beta formatter changes defaults.
       - name: Check formatting
+        if: matrix.toolchain == 'stable'
         run: cargo fmt --all -- --check
 
       - name: Build workspace
@@ -54,5 +66,26 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
-      - name: Clippy
+      # Explicit symlink-farm integration test step — always runs without
+      # kernel privileges.  Kernel overlayfs and FUSE tests remain #[ignore]
+      # and must be run locally with elevated privileges.
+      - name: Integration tests (symlink backend)
+        run: cargo test --workspace --test integration_core -- vfs_symlink
+
+      # -D warnings only on stable.  Beta may introduce new unstable lints
+      # that we haven't addressed yet.
+      - name: Clippy (stable — deny warnings)
+        if: matrix.toolchain == 'stable'
         run: cargo clippy --workspace -- -D warnings
+
+      - name: Clippy (beta — warn only)
+        if: matrix.toolchain == 'beta'
+        run: cargo clippy --workspace
+
+      # cargo-deny: license audit and vulnerability check.
+      # Only run on stable to avoid duplicate reports; one pass is sufficient.
+      - name: Cargo deny (licenses + advisories)
+        if: matrix.toolchain == 'stable'
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          arguments: --all-features

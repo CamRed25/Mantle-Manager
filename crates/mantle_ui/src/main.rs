@@ -7,6 +7,7 @@
 use adw::prelude::*;
 use libadwaita as adw;
 
+mod downloads;
 mod pages;
 mod settings;
 mod sidebar;

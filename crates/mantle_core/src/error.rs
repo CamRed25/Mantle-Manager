@@ -51,4 +51,8 @@ pub enum MantleError {
     /// A required resource was not found.
     #[error("Not found: {0}")]
     NotFound(String),
+
+    /// SKSE installer error (download, extraction, or validation failure).
+    #[error("SKSE installer error: {0}")]
+    Skse(String),
 }

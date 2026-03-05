@@ -53,4 +53,9 @@ libadwaita = { version = "~0.6", features = ["v1_4"] }
 # Archive extraction (libarchive FFI)
 compress-tools = "0.15.1"
 # Optional — net feature (declare optional = true in each crate that gates it)
-reqwest = { version = "~0.11", features = ["json", "stream"] }
+# rustls-tls avoids OpenSSL linkage issues in Flatpak; stream enables chunked downloads.
+reqwest = { version = "~0.11", default-features = false, features = ["rustls-tls", "json", "stream"] }
+# UUIDs for stable download job identity.
+uuid = { version = "1", features = ["v4"] }
+# Temporary files/directories used in tests.
+tempfile = "3"

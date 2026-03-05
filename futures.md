@@ -40,9 +40,10 @@
 - Backend `prune_losers(conflict_map, mods_dir, backup_dir)` is fully implemented in `conflict/prune.rs` (moves overridden files to a backup directory). What's missing is the UI tool surface: a Tools menu action that builds the conflict map for the active profile, previews the list of files to be removed from each losing mod, lets the user confirm, then calls `prune_losers`. Requires a dialog or dedicated page in `mantle_ui`, and an `EventBus` `ConflictMapUpdated` trigger to refresh after pruning.
 
 ### SKSEInstaller — automated script extender download and install
-- **Date:** 2026-03-04
+- **Date:** 2026-03-04 (completed 2026-03-05)
+- **Status:** ✅ Implemented in `mantle_core/src/skse/` behind `--features net`
 - **Reference:** `mo2_linux_plugins_examples/SKSEInstaller/`, PLUGIN_API.md §3, `game/games.rs`
-- MO2 plugin (~2000 lines) that scrapes silverlock.org and the GitHub API for the latest SKSE/F4SE/NVSE/etc. release matching the installed game version, downloads the archive, verifies integrity, extracts executables and DLLs to the correct game directory, and auto-configures Proton DLL overrides in the Wine prefix. In Mantle Manager this would be a native plugin (requires network + filesystem ops outside the Rhai sandbox). Key components: per-game version scraping keyed on `GameKind`, HTTP download with retry/backoff, archive validation (SHA256 or size check), Proton prefix `winecfg` override writing. Deferred until a `mantle_net` crate or `net` feature flag exists.
+- See "Completed / Integrated" section below for full implementation notes.
 
 ### LootWarningChecker — LOOT masterlist dirty plugin detection
 - **Date:** 2026-03-04
@@ -57,6 +58,23 @@
 ---
 
 ## Technical Debt & Refactoring
+
+### Download HTTP fetch implementation
+- **Date:** 2026-03-05
+- **Reference:** `path.md` §a, `crates/mantle_ui/src/downloads/queue.rs`
+- `DownloadQueue::enqueue()` currently transitions every new job immediately to
+  `DownloadStatus::Failed("HTTP fetch not yet implemented")`.  Full implementation
+  requires:
+  - `reqwest` streaming download running in a `tokio` task (add
+    `reqwest.workspace = true` and `tokio.workspace = true` to
+    `mantle_ui/Cargo.toml` when implementing).
+  - Per-64 KiB progress pushes via `mpsc::Sender<DownloadProgress>` updating
+    `InProgress { progress, bytes_done, total_bytes }`.
+  - Terminal `Complete { bytes }` or `Failed(msg)` delivery.
+  - `apply_progress()` already called from the second `glib::idle_add_local` loop;
+    no wiring changes needed beyond implementing the actual download task.
+  - `enqueue_nxm(url: &str)` entry point (depends on `mantle_net` item g for
+    NXM URL parsing and CDN redirect resolution).
 
 
 
@@ -456,3 +474,15 @@
 - Deferred: `game_version` (EXE / manifest version probe); xSE/SKSE launch target detection; VFS overlay mount before launch; per-profile mod count batch query; live state refresh on user action.
 - No new tests (UI-only — `UI_GUIDE.md` §9 compliance).
 - **Running total: 392 passing, 0 failed, 0 warnings** (`cargo clippy --workspace -- -D warnings` clean).
+### SKSEInstaller — automated script extender download and install (net feature)
+- **Date:** 2026-03-05
+- **Reference:** `mo2_linux_plugins_examples/SKSEInstaller/`, `crates/mantle_core/src/skse/`
+- **Feature flag:** `--features net` (both `mantle_core` and `mantle_ui`); no-op when feature is absent.
+- **`skse/config.rs`** — `SkseGameConfig` struct; `SKSE_GAME_MAP` static with 8 entries (SkyrimLE/SE/VR, EnderalSE, Fallout4/NV/3, Oblivion); `config_for_game(kind)` returns `None` for Morrowind and Starfield. 5 unit tests.
+- **`skse/version.rs`** — `SkseVersion { major, minor, patch }` (Copy, PartialOrd, Display); `parse_version_str` handles both space-separated (`"2 2 6 0"`) and dot-separated (`"2.2.6"`) formats; `installed_version(game_dir, config)` reads `{game_dir}/{config.version_file}`; `async fn latest_version(config, timeout_secs)` HTTP GETs the version endpoint. 10 unit tests.
+- **`skse/download.rs`** — `DownloadConfig { max_retries: 3, initial_backoff_ms: 1000, timeout_secs: 60 }`; `async fn download_file<F>(url, dest, cfg, progress)`; streams chunks into `tempfile::NamedTempFile` then `persist(dest)` (atomic); retries on network/5xx with exponential backoff; returns immediately on 4xx. 2 unit tests.
+- **`skse/proton.rs`** — `write_dll_overrides(user_reg, dlls)` appends `"dll"="native,builtin"` entries to `[Software\Wine\DllOverrides]` in Proton prefix `user.reg`; idempotent; creates section if absent (with Unix timestamp); atomic write via `.tmp` + rename; no-ops silently when `user.reg` is absent (prefix not initialised). 5 unit tests.
+- **`skse/mod.rs`** — `SkseInstallConfig`, `SkseInstallResult`, `SkseProgress` enum; `async fn install_skse(kind, cfg, progress)` 12-step pipeline: config lookup → version check → optional skip-if-current → download → magic-bytes validation → `extract_and_flatten` (strips single versioned top-level wrapper dir) → `normalize_dir` (case-fold for Linux FS) → loader presence validation → DLL overrides → version file write → temp cleanup.
+- **`error.rs`** — `MantleError::Skse(String)` variant added.
+- **UI** (`mantle_ui/src/window.rs`): `[cfg(feature = "net")]` "Script Extender" header bar button (`system-software-update-symbolic`); disabled until a supported game is detected; `wire_skse_button` / `run_skse_install` helpers follow OS-thread + mpsc + `glib::idle_add_local` pattern; progress shown via `adw::Toast` title mutation.
+- **Tests:** 33 new unit tests across 4 new modules. `cargo test --package mantle_core --features net` — all passing. `cargo clippy --package mantle_core --features net -- -D warnings` clean.

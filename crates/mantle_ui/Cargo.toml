@@ -13,6 +13,10 @@ workspace = true
 name = "mantle-manager"
 path = "src/main.rs"
 
+[features]
+## Enables SKSE installer: version check + HTTP download via mantle_core's net feature.
+net = ["mantle_core/net"]
+
 [dependencies]
 mantle_core = { path = "../mantle_core" }
 gtk4.workspace = true
@@ -21,3 +25,4 @@ tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true

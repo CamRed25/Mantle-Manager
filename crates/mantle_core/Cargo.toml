@@ -9,7 +9,14 @@ license.workspace = true
 [lints]
 workspace = true
 
+[features]
+## Enables HTTP networking: version checks and downloads for the SKSE installer.
+## Adds `reqwest` (TLS via rustls). Must be opted-in explicitly; Mantle Manager
+## builds and runs fully without this feature.
+net = ["dep:reqwest"]
+
 [dependencies]
+reqwest = { workspace = true, optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

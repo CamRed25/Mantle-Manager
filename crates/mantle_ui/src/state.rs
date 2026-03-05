@@ -52,22 +52,42 @@ pub struct ProfileEntry {
     pub active: bool,
 }
 
-pub enum DownloadState {
-    /// Download is running; value is progress in the range `0.0..=1.0`.
-    InProgress(f64),
-    /// Download finished successfully.
-    Complete,
-    /// Download is waiting in the queue.
+/// Status of a single download job.
+///
+/// Carried by [`DownloadEntry`] and pushed via the progress channel when
+/// background tasks report updates.
+#[derive(Clone)]
+pub enum DownloadStatus {
+    /// Waiting in the queue — not yet started.
     Queued,
+    /// Download is running.
+    ///
+    /// - `progress`    — fraction complete in `0.0..=1.0`.
+    /// - `bytes_done`  — bytes received so far.
+    /// - `total_bytes` — total expected bytes, if the server sent
+    ///   `Content-Length`.
+    #[allow(dead_code)] // fields used when HTTP fetch is implemented
+    InProgress {
+        progress: f64,
+        bytes_done: u64,
+        total_bytes: Option<u64>,
+    },
+    /// Download finished successfully.
+    ///
+    /// `bytes` is the total number of bytes written to disk.
+    #[allow(dead_code)] // field used when HTTP fetch is implemented
+    Complete { bytes: u64 },
     /// Download stopped due to an error; contains a short error description.
     Failed(String),
+    /// Download was cancelled by the user before it completed.
+    Cancelled,
 }
 
 pub struct DownloadEntry {
-    /// Stable ID for cancel / retry action dispatch. Wired in item y.
+    /// Stable UUID string — used for cancel / retry / clear action dispatch.
     pub id: String,
     pub name: String,
-    pub state: DownloadState,
+    pub state: DownloadStatus,
 }
 
 // ─── Theme types ──────────────────────────────────────────────────────────────
@@ -177,22 +197,26 @@ impl AppState {
                 DownloadEntry {
                     id: "dl-1".to_string(),
                     name: "Requiem 5.4.0".to_string(),
-                    state: DownloadState::InProgress(0.67),
+                    state: DownloadStatus::InProgress {
+                        progress: 0.67,
+                        bytes_done: 67_108_864,
+                        total_bytes: Some(100_000_000),
+                    },
                 },
                 DownloadEntry {
                     id: "dl-2".to_string(),
                     name: "SkyUI 5.2SE".to_string(),
-                    state: DownloadState::Complete,
+                    state: DownloadStatus::Complete { bytes: 5_242_880 },
                 },
                 DownloadEntry {
                     id: "dl-3".to_string(),
                     name: "WICO — Windsong".to_string(),
-                    state: DownloadState::Queued,
+                    state: DownloadStatus::Queued,
                 },
                 DownloadEntry {
                     id: "dl-4".to_string(),
                     name: "Immersive Armors SE".to_string(),
-                    state: DownloadState::Failed("Connection timeout".to_string()),
+                    state: DownloadStatus::Failed("Connection timeout".to_string()),
                 },
             ],
             themes: vec![

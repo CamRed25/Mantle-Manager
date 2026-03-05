@@ -2,7 +2,7 @@ use adw::prelude::*;
 use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ProgressBar, ScrolledWindow, Separator};
 use libadwaita as adw;
 
-use crate::state::{AppState, DownloadState};
+use crate::state::{AppState, DownloadStatus};
 
 /// Build the always-visible right sidebar: downloads, profiles, overlay status.
 pub fn build(state: &AppState) -> gtk4::ScrolledWindow {
@@ -63,7 +63,7 @@ fn downloads_section(state: &AppState) -> GtkBox {
         info_col.append(&name);
 
         match &dl.state {
-            DownloadState::InProgress(progress) => {
+            DownloadStatus::InProgress { progress, .. } => {
                 let bar = ProgressBar::new();
                 bar.set_fraction(*progress);
                 info_col.append(&bar);
@@ -75,7 +75,7 @@ fn downloads_section(state: &AppState) -> GtkBox {
                 pct.set_valign(gtk4::Align::Center);
                 item.append(&pct);
             }
-            DownloadState::Complete => {
+            DownloadStatus::Complete { .. } => {
                 let status = Label::new(Some("Complete"));
                 status.add_css_class("caption");
                 status.add_css_class("success");
@@ -87,17 +87,24 @@ fn downloads_section(state: &AppState) -> GtkBox {
                 icon.set_valign(gtk4::Align::Center);
                 item.append(&icon);
             }
-            DownloadState::Queued => {
+            DownloadStatus::Queued => {
                 let status = Label::new(Some("Queued"));
                 status.add_css_class("caption");
                 status.add_css_class("dim-label");
                 info_col.append(&status);
                 item.append(&info_col);
             }
-            DownloadState::Failed(msg) => {
+            DownloadStatus::Failed(msg) => {
                 let status = Label::new(Some(&format!("Failed: {msg}")));
                 status.add_css_class("caption");
                 status.add_css_class("error");
+                info_col.append(&status);
+                item.append(&info_col);
+            }
+            DownloadStatus::Cancelled => {
+                let status = Label::new(Some("Cancelled"));
+                status.add_css_class("caption");
+                status.add_css_class("dim-label");
                 info_col.append(&status);
                 item.append(&info_col);
             }

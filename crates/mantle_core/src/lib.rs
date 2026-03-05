@@ -17,6 +17,7 @@
 //! ├── mod_list — Mod list state and ordering
 //! ├── plugin   — Extension/scripting system (PluginContext, EventBus, Rhai)
 //! ├── profile  — Profile CRUD and activation
+//! ├── skse     — Script extender installer (requires `net` feature)
 //! ├── theme    — User-installable theme discovery (scan {data_dir}/themes/)
 //! ├── vfs      — Virtual filesystem backend (overlayfs / fuse / symlink)
 //! └── error    — Root error type (MantleError)
@@ -33,6 +34,8 @@ pub mod install;
 pub mod mod_list;
 pub mod plugin;
 pub mod profile;
+#[cfg(feature = "net")]
+pub mod skse;
 pub mod theme;
 pub mod vfs;
 

@@ -1,0 +1,41 @@
+# cargo-deny configuration
+# See: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Fail CI on any known vulnerability.
+vulnerability = "deny"
+# Warn on unmaintained crates but don't fail — some transitive deps are
+# unmaintained but stable (no known CVEs).
+unmaintained = "warn"
+# Deny yanked crates — they were yanked for a reason.
+yanked = "deny"
+
+[licenses]
+# Reject any crate without an identified license.
+unlicensed = "deny"
+# Licenses approved for use in this project (GPL-3.0-or-later is our own
+# license; the remainder are compatible permissive/copyleft licenses).
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "GPL-3.0-or-later",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Zlib",
+    "CC0-1.0",
+    "MPL-2.0",
+    "OpenSSL",
+]
+
+[bans]
+# Warn when multiple versions of the same crate appear in the dependency graph.
+# Deny is too strict for most real-world Rust projects where transitive deps
+# often disagree on minor versions.
+multiple-versions = "warn"
+# Wildcard dependencies are too loose for a security-conscious project.
+wildcards = "warn"

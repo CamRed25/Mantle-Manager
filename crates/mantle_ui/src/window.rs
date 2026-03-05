@@ -40,6 +40,7 @@ use libadwaita as adw;
 use mantle_core::config::{default_settings_path, AppSettings};
 
 use crate::{
+    downloads::{DownloadProgress, DownloadQueue},
     pages::{downloads, mods, overview, plugins, profiles},
     settings, sidebar,
     state::AppState,
@@ -90,6 +91,14 @@ pub fn build_ui(app: &adw::Application) {
     // in glib 0.19.  The idle_add_local callback polls try_recv() each cycle.
     let (sender, receiver) = std::sync::mpsc::channel::<AppState>();
 
+    // ── Download progress channel (future background tasks → GTK thread) ──
+    // Background download workers will clone `progress_tx` and push
+    // DownloadProgress messages; the second idle loop drains `progress_rx`
+    // and calls apply_progress() so status is reflected without a full reload.
+    let (progress_tx, progress_rx) = std::sync::mpsc::channel::<DownloadProgress>();
+    let queue_rc: Rc<RefCell<DownloadQueue>> =
+        Rc::new(RefCell::new(DownloadQueue::new(progress_tx)));
+
     // Shared steam_app_id: set by the idle callback when live state arrives;
     // read by the launch button callback.  Rc<Cell<…>> is safe for the GTK
     // main thread (single-threaded access only).
@@ -98,6 +107,12 @@ pub fn build_ui(app: &adw::Application) {
     // Shared game data directory: updated from live state so wire_launch_button
     // can access it at click time without re-reading the DB.
     let game_data_path_shared: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
+
+    // Shared game kind — updated alongside app_id; drives SKSE button sensitivity.
+    // Only needed when the `net` feature is enabled.
+    #[cfg(feature = "net")]
+    let game_kind_shared: Rc<Cell<Option<mantle_core::game::GameKind>>> =
+        Rc::new(Cell::new(None));
 
     // Persistent VFS mount handle: stored after each successful mount and
     // released (unmounted) on the next launch click.  `None` before the first
@@ -124,6 +139,17 @@ pub fn build_ui(app: &adw::Application) {
     let install_btn = gtk4::Button::from_icon_name("document-save-symbolic");
     install_btn.set_tooltip_text(Some("Install Mod"));
     header.pack_end(&install_btn);
+
+    // "Script Extender" button — downloads and installs SKSE/F4SE/etc.
+    // Only compiled when the `net` feature is enabled.
+    #[cfg(feature = "net")]
+    let skse_btn = {
+        let btn = gtk4::Button::from_icon_name("system-software-update-symbolic");
+        btn.set_tooltip_text(Some("Install Script Extender (SKSE, F4SE, …)"));
+        btn.set_sensitive(false); // enabled once a supported game is detected
+        header.pack_end(&btn);
+        btn
+    };
 
     // Settings gear — opens the preferences dialog.
     let settings_btn = gtk4::Button::from_icon_name("preferences-system-symbolic");
@@ -156,7 +182,8 @@ pub fn build_ui(app: &adw::Application) {
     // ToastOverlay created here so it can be passed to page builders that
     // need to show feedback (e.g. the mods page "Add Mod" button).
     let toast_overlay = adw::ToastOverlay::new();
-    let (stack, aside) = build_main_content(&placeholder, &window, &refresh_fn, &toast_overlay);
+    let (stack, aside) =
+        build_main_content(&placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc);
     switcher.set_stack(Some(&stack));
 
     // NavigationSplitView: sidebar = summary panel (left), content = ViewStack (right).
@@ -200,6 +227,15 @@ pub fn build_ui(app: &adw::Application) {
     // ── Wire install button ───────────────────────────────────────────────
     wire_install_button(&install_btn, &window, &toast_overlay);
 
+    // ── Wire SKSE button (net feature only) ───────────────────────────────
+    #[cfg(feature = "net")]
+    wire_skse_button(
+        &skse_btn,
+        &game_kind_shared,
+        &game_data_path_shared,
+        &toast_overlay,
+    );
+
     window.present();
 
     // ── Background state loader ───────────────────────────────────────────
@@ -218,6 +254,11 @@ pub fn build_ui(app: &adw::Application) {
     let window_c = window.clone();
     let refresh_fn_c = Rc::clone(&refresh_fn);
     let toast_overlay_c = toast_overlay.clone();
+    let queue_idle = Rc::clone(&queue_rc);
+    #[cfg(feature = "net")]
+    let skse_btn_c = skse_btn.clone();
+    #[cfg(feature = "net")]
+    let game_kind_c = Rc::clone(&game_kind_shared);
     glib::idle_add_local(move || {
         use std::sync::mpsc::TryRecvError;
         match receiver.try_recv() {
@@ -232,12 +273,46 @@ pub fn build_ui(app: &adw::Application) {
                     &window_c,
                     &refresh_fn_c,
                     &toast_overlay_c,
+                    &queue_idle,
                 );
+                // Update SKSE button sensitivity whenever live state arrives.
+                #[cfg(feature = "net")]
+                {
+                    use mantle_core::game::games::KNOWN_GAMES;
+                    let kind = state
+                        .steam_app_id
+                        .and_then(|id| KNOWN_GAMES.iter().find(|g| g.steam_app_id == id))
+                        .map(|g| g.kind);
+                    game_kind_c.set(kind);
+                    let supported =
+                        kind.is_some_and(|k| mantle_core::skse::config_for_game(k).is_some());
+                    skse_btn_c.set_sensitive(supported);
+                }
                 glib::ControlFlow::Continue
             }
             Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(TryRecvError::Disconnected) => glib::ControlFlow::Break,
         }
+    });
+
+    // ── Idle poll: drain download progress channel ────────────────────────
+    //
+    // Each message updates one job's status in the queue.  No full page
+    // rebuild is triggered here (scaffolding); the next user interaction or
+    // state refresh will naturally repaint the downloads page.
+    let queue_prog = Rc::clone(&queue_rc);
+    glib::idle_add_local(move || {
+        use std::sync::mpsc::TryRecvError;
+        loop {
+            match progress_rx.try_recv() {
+                Ok(prog) => {
+                    queue_prog.borrow_mut().apply_progress(prog);
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
+            }
+        }
+        glib::ControlFlow::Continue
     });
 }
 
@@ -256,6 +331,8 @@ pub fn build_ui(app: &adw::Application) {
 /// - `window`: Application window passed through to page builders.
 /// - `refresh`: Refresh callback passed through to page builders.
 /// - `toast_overlay`: Toast overlay passed through to page builders.
+/// - `queue`: Shared download queue forwarded to the downloads page.
+#[allow(clippy::too_many_arguments)]
 fn apply_state_update(
     state: &AppState,
     nav: (&adw::NavigationSplitView, &adw::ViewSwitcher),
@@ -264,9 +341,11 @@ fn apply_state_update(
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
+    queue: &Rc<RefCell<DownloadQueue>>,
 ) {
     let (split_view, switcher) = nav;
-    let (new_stack, new_aside) = build_main_content(state, window, refresh, toast_overlay);
+    let (new_stack, new_aside) =
+        build_main_content(state, window, refresh, toast_overlay, queue);
     switcher.set_stack(Some(&new_stack));
 
     let new_sidebar = adw::NavigationPage::builder().title("Summary").child(&new_aside).build();
@@ -293,6 +372,8 @@ fn apply_state_update(
 ///   need to set `transient_for` on dialogs.
 /// - `refresh`: Callback to re-queue a state reload. Call after any
 ///   DB-mutating user action so the UI reflects the new state.
+/// - `queue`: Shared download queue forwarded to the downloads page so
+///   its action buttons can mutate queue state directly.
 ///
 /// # Returns
 /// `(stack, aside)` — the five-tab view stack and the scrollable sidebar.
@@ -301,6 +382,7 @@ fn build_main_content(
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
+    queue: &Rc<RefCell<DownloadQueue>>,
 ) -> (adw::ViewStack, gtk4::ScrolledWindow) {
     let stack = adw::ViewStack::new();
 
@@ -331,7 +413,15 @@ fn build_main_content(
         stack.add_titled(&plugins::build(state, window, refresh), Some("plugins"), "Plugins");
     plugins_page.set_icon_name(Some("application-x-executable-symbolic"));
 
-    let downloads_page = stack.add_titled(&downloads::build(state), Some("downloads"), "Downloads");
+    let downloads_page = stack.add_titled(
+        &downloads::build(
+            &queue.borrow().snapshot(),
+            queue,
+            refresh,
+        ),
+        Some("downloads"),
+        "Downloads",
+    );
     downloads_page.set_icon_name(Some("folder-download-symbolic"));
 
     let profiles_page =
@@ -830,6 +920,154 @@ fn install_mod_archive(archive_path: std::path::PathBuf, toast_overlay: adw::Toa
             }
             Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(TryRecvError::Disconnected) => glib::ControlFlow::Break,
+        }
+    });
+}
+
+// ── SKSE installer (net feature) ─────────────────────────────────────────────
+
+#[cfg(feature = "net")]
+fn wire_skse_button(
+    btn: &gtk4::Button,
+    game_kind: &std::rc::Rc<std::cell::Cell<Option<mantle_core::game::GameKind>>>,
+    game_data_path: &std::rc::Rc<std::cell::RefCell<Option<std::path::PathBuf>>>,
+    toast_overlay: &adw::ToastOverlay,
+) {
+    use mantle_core::skse::config_for_game;
+
+    let btn_c = btn.clone();
+    let game_kind_c = game_kind.clone();
+    let game_data_c = game_data_path.clone();
+    let overlay_c = toast_overlay.clone();
+
+    btn.connect_clicked(move |_| {
+        let Some(kind) = game_kind_c.get() else { return };
+        if config_for_game(kind).is_none() {
+            return;
+        }
+        let Some(game_dir) = game_data_c.borrow().as_ref().cloned() else { return };
+        btn_c.set_sensitive(false);
+        let overlay = overlay_c.clone();
+        let btn_restore = btn_c.clone();
+        run_skse_install(kind, game_dir, overlay, move || {
+            btn_restore.set_sensitive(true);
+        });
+    });
+}
+
+#[cfg(feature = "net")]
+fn run_skse_install(
+    kind: mantle_core::game::GameKind,
+    game_dir: std::path::PathBuf,
+    toast_overlay: adw::ToastOverlay,
+    on_done: impl Fn() + 'static,
+) {
+    use mantle_core::skse::{install_skse, SkseInstallConfig, SkseProgress};
+    use std::sync::mpsc;
+
+    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+
+    // Progress toast that stays until we dismiss it.
+    let pending_toast = adw::Toast::builder()
+        .title("Installing script extender…")
+        .timeout(0)
+        .build();
+    toast_overlay.add_toast(pending_toast.clone());
+
+    let tx_progress = tx.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio rt");
+
+        let proton_prefix = mantle_core::game::games::KNOWN_GAMES
+            .iter()
+            .find(|d| d.kind == kind)
+            .and_then(|d| mantle_core::game::proton::proton_prefix(d.steam_app_id));
+
+        let cfg = SkseInstallConfig {
+            game_dir,
+            proton_prefix,
+            download: mantle_core::skse::DownloadConfig::default(),
+            temp_dir: None,
+            skip_if_current: true,
+        };
+
+        let result = rt.block_on(install_skse(kind, cfg, {
+            let tx = tx_progress;
+            move |ev| {
+                let msg = match ev {
+                    SkseProgress::CheckingVersion => "Checking version…".to_string(),
+                    SkseProgress::Downloading { bytes, total } => match total {
+                        Some(t) => format!("Downloading… {bytes}/{t} bytes"),
+                        None => format!("Downloading… {bytes} bytes"),
+                    },
+                    SkseProgress::Extracting => "Extracting…".to_string(),
+                    SkseProgress::Validating => "Validating…".to_string(),
+                    SkseProgress::WritingDllOverrides => "Writing DLL overrides…".to_string(),
+                    SkseProgress::Done => "Done".to_string(),
+                    _ => return,
+                };
+                let _ = tx.send(Ok(msg));
+            }
+        }));
+
+        match result {
+            Ok(res) if res.was_up_to_date => {
+                let _ = tx.send(Ok(format!(
+                    "Script extender {} is already up to date",
+                    res.version_installed
+                )));
+            }
+            Ok(res) => {
+                let _ = tx.send(Ok(format!(
+                    "Script extender {} installed successfully",
+                    res.version_installed
+                )));
+            }
+            Err(e) => {
+                let _ = tx.send(Err(format!("{e}")));
+            }
+        }
+    });
+
+    glib::idle_add_local(move || {
+        use std::sync::mpsc::TryRecvError;
+        match rx.try_recv() {
+            Ok(Ok(msg)) => {
+                // Progress messages come as Ok(Ok(..)); the final result starts with "Script extender".
+                if msg.starts_with("Script extender") {
+                    pending_toast.dismiss();
+                    toast_overlay.add_toast(
+                        adw::Toast::builder()
+                            .title(msg)
+                            .timeout(4)
+                            .build(),
+                    );
+                    on_done();
+                    glib::ControlFlow::Break
+                } else {
+                    pending_toast.set_title(&msg);
+                    glib::ControlFlow::Continue
+                }
+            }
+            Ok(Err(msg)) => {
+                pending_toast.dismiss();
+                toast_overlay.add_toast(
+                    adw::Toast::builder()
+                        .title(format!("Script extender install failed: {msg}"))
+                        .timeout(6)
+                        .build(),
+                );
+                on_done();
+                glib::ControlFlow::Break
+            }
+            Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(TryRecvError::Disconnected) => {
+                on_done();
+                glib::ControlFlow::Break
+            }
         }
     });
 }
