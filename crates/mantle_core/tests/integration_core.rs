@@ -19,7 +19,9 @@ use mantle_core::{
     conflict::{build_conflict_map, ModEntry},
     data::{
         mods::{insert_mod, InsertMod},
-        profiles::{delete_profile, insert_profile, list_profiles, set_active_profile, InsertProfile},
+        profiles::{
+            delete_profile, insert_profile, list_profiles, set_active_profile, InsertProfile,
+        },
         Database,
     },
     mod_list::{add_mod_to_profile, list_profile_mods, set_mod_enabled},
@@ -53,12 +55,9 @@ fn profile_mod_lifecycle() {
         .expect("insert_profile");
 
     // Activate the profile (mirrors what state_worker does).
-    db.with_conn(|conn| set_active_profile(conn, pid))
-        .expect("set_active_profile");
+    db.with_conn(|conn| set_active_profile(conn, pid)).expect("set_active_profile");
 
-    let profiles = db
-        .with_conn(list_profiles)
-        .expect("list_profiles after insert");
+    let profiles = db.with_conn(list_profiles).expect("list_profiles after insert");
     assert_eq!(profiles.len(), 1, "exactly one profile after insert");
 
     // ── Install a mod ─────────────────────────────────────────────────────
@@ -101,26 +100,19 @@ fn profile_mod_lifecycle() {
         .expect("set_mod_enabled");
 
     // ── Verify the profile mod list ───────────────────────────────────────
-    let mods = db
-        .with_conn(|conn| list_profile_mods(conn, pid))
-        .expect("list_profile_mods");
+    let mods = db.with_conn(|conn| list_profile_mods(conn, pid)).expect("list_profile_mods");
     assert_eq!(mods.len(), 1, "one mod entry after add");
     assert!(mods[0].is_enabled, "mod must be enabled after set_mod_enabled");
     assert_eq!(mods[0].mod_id, mid);
 
     // ── Delete profile — cascade removes profile_mods ──────────────────────
-    let deleted = db
-        .with_conn(|conn| delete_profile(conn, pid))
-        .expect("delete_profile");
+    let deleted = db.with_conn(|conn| delete_profile(conn, pid)).expect("delete_profile");
     assert!(deleted, "delete_profile must return true for existing profile");
 
     let mods_after = db
         .with_conn(|conn| list_profile_mods(conn, pid))
         .expect("list_profile_mods after delete");
-    assert!(
-        mods_after.is_empty(),
-        "cascade delete must remove all profile_mods rows"
-    );
+    assert!(mods_after.is_empty(), "cascade delete must remove all profile_mods rows");
 
     let profiles_after = db.with_conn(list_profiles).expect("list_profiles after delete");
     assert!(profiles_after.is_empty(), "no profiles after delete");
@@ -145,8 +137,8 @@ fn vfs_symlink_roundtrip() {
         merge_dir: merge.clone(),
     };
 
-    let handle = mount_with(BackendKind::SymlinkFarm, params)
-        .expect("symlink-farm mount must succeed");
+    let handle =
+        mount_with(BackendKind::SymlinkFarm, params).expect("symlink-farm mount must succeed");
 
     assert!(
         merge.join("plugin.esp").exists(),
@@ -170,10 +162,7 @@ fn conflict_detection_basic() {
     let map = build_conflict_map(&[
         ModEntry {
             id: "mod-high".to_string(),
-            files: vec![
-                "textures/sky.dds".to_string(),
-                "meshes/sky.nif".to_string(),
-            ],
+            files: vec!["textures/sky.dds".to_string(), "meshes/sky.nif".to_string()],
         },
         ModEntry {
             id: "mod-low".to_string(),
@@ -185,11 +174,7 @@ fn conflict_detection_basic() {
     ]);
 
     // Exactly one conflicted path.
-    assert_eq!(
-        map.total_file_conflicts(),
-        1,
-        "only textures/sky.dds is shared"
-    );
+    assert_eq!(map.total_file_conflicts(), 1, "only textures/sky.dds is shared");
 
     // mod-high (index 0) wins; mod-low (index 1) loses.
     let entry = map

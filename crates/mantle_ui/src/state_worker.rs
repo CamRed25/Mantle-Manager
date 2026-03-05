@@ -58,12 +58,9 @@ static CACHED_GAME: OnceLock<Option<mantle_core::game::GameInfo>> = OnceLock::ne
 /// rather than invalidated on refresh — game installs and Steam re-scans are
 /// expected to require an application restart.
 fn load_game_state() -> Option<&'static mantle_core::game::GameInfo> {
-    CACHED_GAME.get_or_init(|| {
-        game::detect_all_steam()
-            .unwrap_or_default()
-            .into_iter()
-            .next()
-    }).as_ref()
+    CACHED_GAME
+        .get_or_init(|| game::detect_all_steam().unwrap_or_default().into_iter().next())
+        .as_ref()
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -276,13 +273,8 @@ fn load_state() -> anyhow::Result<AppState> {
 
     // ── Plugin registry ───────────────────────────────────────────────────
     let profile_names: Vec<String> = all_profiles.iter().map(|p| p.name.clone()).collect();
-    let (plugin_entries, plugin_count) = load_plugins(
-        &db,
-        active_profile_id,
-        &active_profile_name,
-        &profile_names,
-        first_game,
-    );
+    let (plugin_entries, plugin_count) =
+        load_plugins(&db, active_profile_id, &active_profile_name, &profile_names, first_game);
 
     Ok(AppState {
         steam_app_id,

@@ -36,9 +36,7 @@ use gtk4::{
     glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, SearchEntry, Separator,
 };
 use libadwaita as adw;
-use mantle_core::{
-    plugin::{EventBus, ModManagerEvent, ModInfo},
-};
+use mantle_core::plugin::{EventBus, ModInfo, ModManagerEvent};
 
 use crate::pages::shared::with_db_s as with_db;
 use crate::state::{AppState, ModEntry};
@@ -122,7 +120,13 @@ pub fn build(
     // Persistent empty state page — toggled into data_box when mods is empty.
     let empty_status = empty_state();
 
-    outer.append(&toolbar_bar(&count_label, &list, Rc::clone(&search_text), window, toast_overlay));
+    outer.append(&toolbar_bar(
+        &count_label,
+        &list,
+        Rc::clone(&search_text),
+        window,
+        toast_overlay,
+    ));
     outer.append(&Separator::new(Orientation::Horizontal));
 
     // data_box holds the conflict banner + list scroll or empty status.
@@ -131,7 +135,17 @@ pub fn build(
     populate_data_box(&data_box, state, &list_scroll, &empty_status);
     outer.append(&data_box);
 
-    (outer, ModsHandle { data_box, list, list_scroll, search_text, count_label, empty_status })
+    (
+        outer,
+        ModsHandle {
+            data_box,
+            list,
+            list_scroll,
+            search_text,
+            count_label,
+            empty_status,
+        },
+    )
 }
 
 /// Refresh the Mods page in place without rebuilding the widget tree.
@@ -422,7 +436,12 @@ fn mod_list_box(
 /// - `priority`: 1-based priority number (1 = highest priority).
 /// - `entry`: Mod data to display and IDs to use in DB calls.
 /// - `refresh`: Callback to queue a state reload after a successful toggle.
-fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>, event_bus: &Arc<EventBus>) -> gtk4::ListBoxRow {
+fn mod_row(
+    priority: usize,
+    entry: &ModEntry,
+    refresh: &Rc<dyn Fn()>,
+    event_bus: &Arc<EventBus>,
+) -> gtk4::ListBoxRow {
     let content = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)

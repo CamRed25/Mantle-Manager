@@ -43,6 +43,8 @@ use mantle_core::{
     plugin::EventBus,
 };
 
+#[cfg(feature = "net")]
+use crate::pages::nexus_search;
 use crate::{
     downloads::{DownloadProgress, DownloadQueue},
     pages::{downloads, mods, overview, plugins, profiles},
@@ -50,8 +52,6 @@ use crate::{
     state::AppState,
     state_worker,
 };
-#[cfg(feature = "net")]
-use crate::pages::nexus_search;
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -122,8 +122,7 @@ pub fn build_ui(app: &adw::Application) {
 
     // Shared game kind — updated alongside app_id.  Available unconditionally
     // for game-specific UI decisions; SKSE sensitivity check stays gated on `net`.
-    let game_kind_shared: Rc<Cell<Option<mantle_core::game::GameKind>>> =
-        Rc::new(Cell::new(None));
+    let game_kind_shared: Rc<Cell<Option<mantle_core::game::GameKind>>> = Rc::new(Cell::new(None));
 
     // Persistent VFS mount handle: stored after each successful mount and
     // released (unmounted) on the next launch click.  `None` before the first
@@ -205,7 +204,13 @@ pub fn build_ui(app: &adw::Application) {
     ));
 
     let (stack, init_sidebar_nav, page_handles) = build_main_content(
-        &placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc, &event_bus, &on_launch,
+        &placeholder,
+        &window,
+        &refresh_fn,
+        &toast_overlay,
+        &queue_rc,
+        &event_bus,
+        &on_launch,
     );
     switcher.set_stack(Some(&stack));
 
@@ -254,12 +259,7 @@ pub fn build_ui(app: &adw::Application) {
 
     // ── Wire SKSE button (net feature only) ───────────────────────────────
     #[cfg(feature = "net")]
-    wire_skse_button(
-        &skse_btn,
-        &game_kind_shared,
-        &game_data_path_shared,
-        &toast_overlay,
-    );
+    wire_skse_button(&skse_btn, &game_kind_shared, &game_data_path_shared, &toast_overlay);
 
     window.present();
 
@@ -345,11 +345,7 @@ pub fn build_ui(app: &adw::Application) {
         if had_updates {
             swap_wrap_child(
                 &handles_prog.borrow().downloads_wrap,
-                &downloads::build(
-                    &queue_prog.borrow().snapshot(),
-                    &queue_prog,
-                    &refresh_prog,
-                ),
+                &downloads::build(&queue_prog.borrow().snapshot(), &queue_prog, &refresh_prog),
             );
         }
         glib::ControlFlow::Continue
@@ -375,12 +371,7 @@ fn apply_state_update(state: &AppState, handles: &PageHandles, ctx: &WindowConte
     // Overview: swap child (no persistent input state).
     swap_wrap_child(
         &handles.overview_wrap,
-        &overview::build(
-            state,
-            Rc::clone(&handles.navigate_to_mods),
-            &ctx.refresh,
-            &ctx.on_launch,
-        ),
+        &overview::build(state, Rc::clone(&handles.navigate_to_mods), &ctx.refresh, &ctx.on_launch),
     );
 
     // Plugins: swap child.
@@ -664,11 +655,8 @@ fn wire_launch_button(
     game_data_path: &Rc<RefCell<Option<PathBuf>>>,
     mount_handle: &Rc<RefCell<Option<mantle_core::vfs::MountHandle>>>,
 ) {
-    let handler = make_launch_handler(
-        Rc::clone(app_id),
-        Rc::clone(game_data_path),
-        Rc::clone(mount_handle),
-    );
+    let handler =
+        make_launch_handler(Rc::clone(app_id), Rc::clone(game_data_path), Rc::clone(mount_handle));
     btn.connect_clicked(move |_| handler());
 }
 
@@ -1104,11 +1092,15 @@ fn wire_skse_button(
     let overlay_c = toast_overlay.clone();
 
     btn.connect_clicked(move |_| {
-        let Some(kind) = game_kind_c.get() else { return };
+        let Some(kind) = game_kind_c.get() else {
+            return;
+        };
         if config_for_game(kind).is_none() {
             return;
         }
-        let Some(game_dir) = game_data_c.borrow().as_ref().cloned() else { return };
+        let Some(game_dir) = game_data_c.borrow().as_ref().cloned() else {
+            return;
+        };
         btn_c.set_sensitive(false);
         let overlay = overlay_c.clone();
         let btn_restore = btn_c.clone();
@@ -1131,10 +1123,8 @@ fn run_skse_install(
     let (tx, rx) = mpsc::channel::<SkseMsg>();
 
     // Progress toast that stays until we dismiss it.
-    let pending_toast = adw::Toast::builder()
-        .title("Installing script extender…")
-        .timeout(0)
-        .build();
+    let pending_toast =
+        adw::Toast::builder().title("Installing script extender…").timeout(0).build();
     toast_overlay.add_toast(pending_toast.clone());
 
     let tx_progress = tx.clone();
@@ -1200,9 +1190,7 @@ fn run_skse_install(
         match rx.try_recv() {
             Ok(SkseMsg::Done(msg)) => {
                 pending_toast.dismiss();
-                toast_overlay.add_toast(
-                    adw::Toast::builder().title(msg).timeout(4).build(),
-                );
+                toast_overlay.add_toast(adw::Toast::builder().title(msg).timeout(4).build());
                 on_done();
                 glib::ControlFlow::Break
             }

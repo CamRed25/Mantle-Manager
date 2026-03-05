@@ -87,12 +87,7 @@ fn toolbar(
 
     let active = entries
         .iter()
-        .filter(|d| {
-            matches!(
-                d.state,
-                DownloadStatus::InProgress { .. } | DownloadStatus::Queued
-            )
-        })
+        .filter(|d| matches!(d.state, DownloadStatus::InProgress { .. } | DownloadStatus::Queued))
         .count();
 
     let count_text = if active == 0 {
@@ -173,24 +168,18 @@ fn download_scroll(
         .filter(|d| matches!(d.state, DownloadStatus::InProgress { .. }))
         .collect();
     if !in_progress.is_empty() {
-        content.append(&section(
-            "In Progress",
-            &in_progress,
-            |e| render_in_progress_row(e, Rc::clone(queue), Rc::clone(refresh)),
-        ));
+        content.append(&section("In Progress", &in_progress, |e| {
+            render_in_progress_row(e, Rc::clone(queue), Rc::clone(refresh))
+        }));
     }
 
     // ── Queued ────────────────────────────────────────────────────────────────
-    let queued: Vec<&DownloadEntry> = entries
-        .iter()
-        .filter(|d| matches!(d.state, DownloadStatus::Queued))
-        .collect();
+    let queued: Vec<&DownloadEntry> =
+        entries.iter().filter(|d| matches!(d.state, DownloadStatus::Queued)).collect();
     if !queued.is_empty() {
-        content.append(&section(
-            "Queued",
-            &queued,
-            |e| render_queued_row(e, Rc::clone(queue), Rc::clone(refresh)),
-        ));
+        content.append(&section("Queued", &queued, |e| {
+            render_queued_row(e, Rc::clone(queue), Rc::clone(refresh))
+        }));
     }
 
     // ── Failed ────────────────────────────────────────────────────────────────
@@ -199,11 +188,9 @@ fn download_scroll(
         .filter(|d| matches!(d.state, DownloadStatus::Failed(_)))
         .collect();
     if !failed.is_empty() {
-        content.append(&section(
-            "Failed",
-            &failed,
-            |e| render_failed_row(e, Rc::clone(queue), Rc::clone(refresh)),
-        ));
+        content.append(&section("Failed", &failed, |e| {
+            render_failed_row(e, Rc::clone(queue), Rc::clone(refresh))
+        }));
     }
 
     // ── Cancelled ─────────────────────────────────────────────────────────────
@@ -212,11 +199,9 @@ fn download_scroll(
         .filter(|d| matches!(d.state, DownloadStatus::Cancelled))
         .collect();
     if !cancelled.is_empty() {
-        content.append(&section(
-            "Cancelled",
-            &cancelled,
-            |e| render_cancelled_row(e, Rc::clone(queue), Rc::clone(refresh)),
-        ));
+        content.append(&section("Cancelled", &cancelled, |e| {
+            render_cancelled_row(e, Rc::clone(queue), Rc::clone(refresh))
+        }));
     }
 
     // ── Completed ─────────────────────────────────────────────────────────────
@@ -225,11 +210,9 @@ fn download_scroll(
         .filter(|d| matches!(d.state, DownloadStatus::Complete { .. }))
         .collect();
     if !completed.is_empty() {
-        content.append(&section(
-            "Completed",
-            &completed,
-            |e| render_completed_row(e, Rc::clone(queue), Rc::clone(refresh)),
-        ));
+        content.append(&section("Completed", &completed, |e| {
+            render_completed_row(e, Rc::clone(queue), Rc::clone(refresh))
+        }));
     }
 
     scroll.set_child(Some(&content));

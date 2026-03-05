@@ -492,9 +492,7 @@ fn show_delete_theme_dialog(
 ) {
     let dialog = adw::MessageDialog::builder()
         .heading("Delete Theme?")
-        .body(format!(
-            "\"{theme_name}\" will be permanently removed from your themes folder."
-        ))
+        .body(format!("\"{theme_name}\" will be permanently removed from your themes folder."))
         .transient_for(window)
         .build();
 

@@ -134,10 +134,7 @@ pub fn build(
     // Widget tree
     // ─────────────────────────────────────────────────────────────────────
 
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(0)
-        .build();
+    let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     // ── Search toolbar ────────────────────────────────────────────────────
     let toolbar = GtkBox::builder()
@@ -188,29 +185,27 @@ pub fn build(
         .hexpand(true)
         .build();
 
-    let results_list = Rc::new(ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::Single)
-        .build());
+    let results_list =
+        Rc::new(ListBox::builder().selection_mode(gtk4::SelectionMode::Single).build());
     results_list.add_css_class("navigation-sidebar");
     results_scroll.set_child(Some(results_list.as_ref()));
     content_box.append(&results_scroll);
 
     // Right: files panel (hidden until a mod is selected)
-    let files_pane = Rc::new(GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(8)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .width_request(300)
-        .visible(false)
-        .build());
+    let files_pane = Rc::new(
+        GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(8)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .width_request(300)
+            .visible(false)
+            .build(),
+    );
 
-    let files_header = Label::builder()
-        .label("Available Files")
-        .halign(gtk4::Align::Start)
-        .build();
+    let files_header = Label::builder().label("Available Files").halign(gtk4::Align::Start).build();
     files_header.add_css_class("heading");
     files_pane.append(&files_header);
 
@@ -219,9 +214,7 @@ pub fn build(
         .vexpand(true)
         .build();
 
-    let files_list = Rc::new(ListBox::builder()
-        .selection_mode(gtk4::SelectionMode::None)
-        .build());
+    let files_list = Rc::new(ListBox::builder().selection_mode(gtk4::SelectionMode::None).build());
     files_list.add_css_class("boxed-list");
     files_list_scroll.set_child(Some(files_list.as_ref()));
     files_pane.append(&files_list_scroll);
@@ -350,7 +343,9 @@ pub fn build(
 
             let (mod_id, mod_name, domain, api_key) = {
                 let snap = state.borrow();
-                let Some(result) = snap.results.get(idx) else { return };
+                let Some(result) = snap.results.get(idx) else {
+                    return;
+                };
                 (
                     result.mod_id,
                     result.name.clone(),
@@ -428,7 +423,11 @@ pub fn build(
                 }
 
                 // ── File list for a mod arrived ────────────────────────
-                Ok(SearchMsg::Files { mod_id, mod_name, files }) => {
+                Ok(SearchMsg::Files {
+                    mod_id,
+                    mod_name,
+                    files,
+                }) => {
                     // Rebuild the files panel with one row per file.
                     while let Some(row) = files_list.first_child() {
                         files_list.remove(&row);
@@ -438,18 +437,14 @@ pub fn build(
                     let visible_files: Vec<&ModFile> = files
                         .iter()
                         .filter(|f| {
-                            f.category_name
-                                .as_deref()
-                                .map_or(true, |c| matches!(c, "MAIN" | "Main" | "UPDATE" | "Update"))
+                            f.category_name.as_deref().map_or(true, |c| {
+                                matches!(c, "MAIN" | "Main" | "UPDATE" | "Update")
+                            })
                         })
                         .collect();
 
                     for file in &visible_files {
-                        let row = make_file_row(
-                            file,
-                            &tx,
-                            &state,
-                        );
+                        let row = make_file_row(file, &tx, &state);
                         files_list.append(&row);
                     }
 
@@ -518,12 +513,10 @@ fn make_result_row(result: &SearchResult) -> gtk4::ListBoxRow {
     name.set_ellipsize(gtk4::pango::EllipsizeMode::End);
     outer.append(&name);
 
-    let meta = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
+    let meta = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
 
-    let author = Label::new(Some(&format!("by {}", result.username.as_deref().unwrap_or("Unknown"))));
+    let author =
+        Label::new(Some(&format!("by {}", result.username.as_deref().unwrap_or("Unknown"))));
     author.add_css_class("caption");
     author.add_css_class("dim-label");
     meta.append(&author);

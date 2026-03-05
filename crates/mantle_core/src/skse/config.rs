@@ -169,10 +169,7 @@ mod tests {
             GameKind::Oblivion,
         ];
         for kind in supported {
-            assert!(
-                config_for_game(kind).is_some(),
-                "{kind} should have a config entry"
-            );
+            assert!(config_for_game(kind).is_some(), "{kind} should have a config entry");
         }
     }
 

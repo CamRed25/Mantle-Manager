@@ -78,9 +78,7 @@ where
 
     for attempt in 0..=cfg.max_retries {
         if attempt > 0 {
-            let delay = cfg
-                .initial_backoff_ms
-                .saturating_mul(1u64 << (attempt - 1).min(6));
+            let delay = cfg.initial_backoff_ms.saturating_mul(1u64 << (attempt - 1).min(6));
             tokio::time::sleep(Duration::from_millis(delay)).await;
         }
 
@@ -94,7 +92,12 @@ where
                         attempt + 1
                     )));
                 }
-                tracing::warn!(url, attempt, max_retries = cfg.max_retries, "Network error, will retry: {e}");
+                tracing::warn!(
+                    url,
+                    attempt,
+                    max_retries = cfg.max_retries,
+                    "Network error, will retry: {e}"
+                );
                 continue;
             }
         };
@@ -148,9 +151,7 @@ where
         if let Some(msg) = net_err {
             let _ = tmp_path.close();
             if attempt >= cfg.max_retries {
-                return Err(MantleError::Skse(format!(
-                    "Stream error downloading {url}: {msg}"
-                )));
+                return Err(MantleError::Skse(format!("Stream error downloading {url}: {msg}")));
             }
             tracing::warn!(url, attempt, "Stream error, will retry: {msg}");
             continue;

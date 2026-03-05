@@ -4,11 +4,7 @@
 /// When compiled with the `net` feature, [`DownloadQueue::enqueue`] spawns a
 /// real HTTP download task via `mantle_net`.  Without `net` every job
 /// immediately fails with a "not implemented" message (scaffolding behaviour).
-use std::{
-    collections::VecDeque,
-    path::PathBuf,
-    sync::mpsc,
-};
+use std::{collections::VecDeque, path::PathBuf, sync::mpsc};
 
 use uuid::Uuid;
 
@@ -129,7 +125,10 @@ fn spawn_download(
             Ok(bytes) => DownloadStatus::Complete { bytes },
             Err(e) => DownloadStatus::Failed(e.to_string()),
         };
-        let _ = progress_tx.send(DownloadProgress { id, status: final_status });
+        let _ = progress_tx.send(DownloadProgress {
+            id,
+            status: final_status,
+        });
     });
 }
 
@@ -208,9 +207,10 @@ impl DownloadQueue {
             dest: dest.clone(),
             status: DownloadStatus::Queued,
         });
-        let _ = self
-            .progress_tx
-            .send(DownloadProgress { id, status: DownloadStatus::Queued });
+        let _ = self.progress_tx.send(DownloadProgress {
+            id,
+            status: DownloadStatus::Queued,
+        });
 
         // ── Real HTTP download (net feature only) ─────────────────────
         #[cfg(feature = "net")]
@@ -219,8 +219,7 @@ impl DownloadQueue {
         // ── Stub: immediately fail when net feature is absent ─────────
         #[cfg(not(feature = "net"))]
         {
-            let status =
-                DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
+            let status = DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
             let _ = self.progress_tx.send(DownloadProgress { id, status });
         }
 
@@ -270,17 +269,13 @@ impl DownloadQueue {
             match job.status {
                 DownloadStatus::Failed(_) | DownloadStatus::Cancelled => {
                     job.status = DownloadStatus::Queued;
-                    let _ = self
-                        .progress_tx
-                        .send(DownloadProgress { id, status: DownloadStatus::Queued });
+                    let _ = self.progress_tx.send(DownloadProgress {
+                        id,
+                        status: DownloadStatus::Queued,
+                    });
 
                     #[cfg(feature = "net")]
-                    spawn_download(
-                        id,
-                        job.url.clone(),
-                        job.dest.clone(),
-                        self.progress_tx.clone(),
-                    );
+                    spawn_download(id, job.url.clone(), job.dest.clone(), self.progress_tx.clone());
 
                     #[cfg(not(feature = "net"))]
                     {
@@ -305,15 +300,13 @@ impl DownloadQueue {
     /// # Parameters
     /// - `id` – the UUID of the completed job to remove.
     pub fn remove_completed(&mut self, id: Uuid) {
-        self.jobs.retain(|j| {
-            !(j.id == id && matches!(j.status, DownloadStatus::Complete { .. }))
-        });
+        self.jobs
+            .retain(|j| !(j.id == id && matches!(j.status, DownloadStatus::Complete { .. })));
     }
 
     /// Remove **all** completed jobs from the queue in one pass.
     pub fn clear_completed(&mut self) {
-        self.jobs
-            .retain(|j| !matches!(j.status, DownloadStatus::Complete { .. }));
+        self.jobs.retain(|j| !matches!(j.status, DownloadStatus::Complete { .. }));
     }
 
     // -----------------------------------------------------------------------

@@ -101,8 +101,7 @@ impl GameIni {
             });
         }
 
-        let raw = fs::read_to_string(path)
-            .map_err(MantleError::Io)?;
+        let raw = fs::read_to_string(path).map_err(MantleError::Io)?;
 
         Ok(Self::parse(&raw, path.to_path_buf()))
     }
@@ -122,10 +121,7 @@ impl GameIni {
                 current_section = sec_name.to_lowercase();
                 sections.entry(current_section.clone()).or_default();
                 raw_lines.push(RawLine::Section(sec_name.to_string()));
-            } else if trimmed.starts_with(';')
-                || trimmed.starts_with('#')
-                || trimmed.is_empty()
-            {
+            } else if trimmed.starts_with(';') || trimmed.starts_with('#') || trimmed.is_empty() {
                 // Comment or blank line — preserve verbatim.
                 raw_lines.push(RawLine::Verbatim(line.to_string()));
             } else if let Some(eq_pos) = trimmed.find('=') {
@@ -150,7 +146,11 @@ impl GameIni {
             }
         }
 
-        Self { sections, raw_lines, path }
+        Self {
+            sections,
+            raw_lines,
+            path,
+        }
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -199,7 +199,12 @@ impl GameIni {
         // Try to update an existing KeyValue line in-place.
         let mut updated = false;
         for line in &mut self.raw_lines {
-            if let RawLine::KeyValue { norm_section, key: k, value: v } = line {
+            if let RawLine::KeyValue {
+                norm_section,
+                key: k,
+                value: v,
+            } = line
+            {
                 if norm_section == &norm_sec && k.to_lowercase() == norm_key {
                     v.clone_from(&value);
                     updated = true;
@@ -260,7 +265,9 @@ impl GameIni {
                         break;
                     }
                 }
-                RawLine::KeyValue { norm_section: ns, .. } if in_section => {
+                RawLine::KeyValue {
+                    norm_section: ns, ..
+                } if in_section => {
                     if ns == norm_section {
                         last_pos = i;
                     } else {
@@ -345,10 +352,7 @@ impl GameIni {
 /// # Errors
 /// Returns [`MantleError::Io`] if a file copy fails or the destination
 /// directory cannot be created.
-pub fn apply_profile_ini(
-    profile_ini_dir: &Path,
-    game_ini_dir: &Path,
-) -> Result<(), MantleError> {
+pub fn apply_profile_ini(profile_ini_dir: &Path, game_ini_dir: &Path) -> Result<(), MantleError> {
     if !profile_ini_dir.exists() {
         return Ok(());
     }
@@ -359,17 +363,15 @@ pub fn apply_profile_ini(
         let entry = entry.map_err(MantleError::Io)?;
         let src = entry.path();
 
-        if src.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-            e.eq_ignore_ascii_case("ini")
-        }) {
+        if src
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("ini"))
+        {
             let file_name = entry.file_name();
             let dst = game_ini_dir.join(&file_name);
             fs::copy(&src, &dst).map_err(MantleError::Io)?;
-            tracing::debug!(
-                "apply_profile_ini: {} → {}",
-                src.display(),
-                dst.display()
-            );
+            tracing::debug!("apply_profile_ini: {} → {}", src.display(), dst.display());
         }
     }
 
@@ -405,17 +407,15 @@ pub fn snapshot_profile_ini(
         let entry = entry.map_err(MantleError::Io)?;
         let src = entry.path();
 
-        if src.extension().and_then(|e| e.to_str()).is_some_and(|e| {
-            e.eq_ignore_ascii_case("ini")
-        }) {
+        if src
+            .extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("ini"))
+        {
             let file_name = entry.file_name();
             let dst = profile_ini_dir.join(&file_name);
             fs::copy(&src, &dst).map_err(MantleError::Io)?;
-            tracing::debug!(
-                "snapshot_profile_ini: {} → {}",
-                src.display(),
-                dst.display()
-            );
+            tracing::debug!("snapshot_profile_ini: {} → {}", src.display(), dst.display());
         }
     }
 
@@ -562,7 +562,8 @@ sStartingCell =
 
         fs::create_dir_all(&src).unwrap();
         fs::write(src.join("Skyrim.ini"), "[Display]\nbFull Screen = 1\n").unwrap();
-        fs::write(src.join("SkyrimPrefs.ini"), "[Launcher]\nbShowFloatingQuestMarkers = 1\n").unwrap();
+        fs::write(src.join("SkyrimPrefs.ini"), "[Launcher]\nbShowFloatingQuestMarkers = 1\n")
+            .unwrap();
 
         apply_profile_ini(&src, &dst).unwrap();
 

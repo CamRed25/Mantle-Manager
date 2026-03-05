@@ -121,8 +121,9 @@ pub fn write_dll_overrides(user_reg: &Path, dlls: &[&str]) -> Result<(), MantleE
     let tmp_path = user_reg.with_extension("tmp");
     std::fs::write(&tmp_path, &new_content)
         .map_err(|e| MantleError::Skse(format!("Failed to write {}: {e}", tmp_path.display())))?;
-    std::fs::rename(&tmp_path, user_reg)
-        .map_err(|e| MantleError::Skse(format!("Failed to rename to {}: {e}", user_reg.display())))?;
+    std::fs::rename(&tmp_path, user_reg).map_err(|e| {
+        MantleError::Skse(format!("Failed to rename to {}: {e}", user_reg.display()))
+    })?;
 
     tracing::debug!(
         path = %user_reg.display(),

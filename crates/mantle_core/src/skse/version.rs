@@ -48,7 +48,11 @@ pub fn parse_version_str(s: &str) -> Option<SkseVersion> {
     let minor = parts.next()?.trim().parse().ok()?;
     let patch = parts.next()?.trim().parse().ok()?;
 
-    Some(SkseVersion { major, minor, patch })
+    Some(SkseVersion {
+        major,
+        minor,
+        patch,
+    })
 }
 
 // ── Installed version ─────────────────────────────────────────────────────────
@@ -91,7 +95,9 @@ pub async fn latest_version(
         .get(config.version_url)
         .send()
         .await
-        .map_err(|e| MantleError::Skse(format!("Version check failed for {}: {e}", config.display_name)))?
+        .map_err(|e| {
+            MantleError::Skse(format!("Version check failed for {}: {e}", config.display_name))
+        })?
         .error_for_status()
         .map_err(|e| MantleError::Skse(format!("Version endpoint HTTP error: {e}")))?
         .text()
@@ -115,19 +121,40 @@ mod tests {
     #[test]
     fn parse_space_separated() {
         let v = parse_version_str("2 2 6 0").unwrap();
-        assert_eq!(v, SkseVersion { major: 2, minor: 2, patch: 6 });
+        assert_eq!(
+            v,
+            SkseVersion {
+                major: 2,
+                minor: 2,
+                patch: 6
+            }
+        );
     }
 
     #[test]
     fn parse_dot_separated() {
         let v = parse_version_str("2.2.6").unwrap();
-        assert_eq!(v, SkseVersion { major: 2, minor: 2, patch: 6 });
+        assert_eq!(
+            v,
+            SkseVersion {
+                major: 2,
+                minor: 2,
+                patch: 6
+            }
+        );
     }
 
     #[test]
     fn parse_with_trailing_newline() {
         let v = parse_version_str("1 7 3 15\n").unwrap();
-        assert_eq!(v, SkseVersion { major: 1, minor: 7, patch: 3 });
+        assert_eq!(
+            v,
+            SkseVersion {
+                major: 1,
+                minor: 7,
+                patch: 3
+            }
+        );
     }
 
     #[test]
@@ -149,18 +176,41 @@ mod tests {
 
     #[test]
     fn display_format() {
-        let v = SkseVersion { major: 2, minor: 2, patch: 6 };
+        let v = SkseVersion {
+            major: 2,
+            minor: 2,
+            patch: 6,
+        };
         assert_eq!(v.to_string(), "2.2.6");
     }
 
     #[test]
     fn version_ordering() {
-        let v1 = SkseVersion { major: 2, minor: 2, patch: 3 };
-        let v2 = SkseVersion { major: 2, minor: 2, patch: 6 };
-        let v3 = SkseVersion { major: 2, minor: 3, patch: 0 };
+        let v1 = SkseVersion {
+            major: 2,
+            minor: 2,
+            patch: 3,
+        };
+        let v2 = SkseVersion {
+            major: 2,
+            minor: 2,
+            patch: 6,
+        };
+        let v3 = SkseVersion {
+            major: 2,
+            minor: 3,
+            patch: 0,
+        };
         assert!(v1 < v2);
         assert!(v2 < v3);
-        assert_eq!(v2, SkseVersion { major: 2, minor: 2, patch: 6 });
+        assert_eq!(
+            v2,
+            SkseVersion {
+                major: 2,
+                minor: 2,
+                patch: 6
+            }
+        );
     }
 
     #[test]
@@ -176,6 +226,13 @@ mod tests {
         let cfg = crate::skse::config::config_for_game(crate::game::GameKind::SkyrimSE).unwrap();
         std::fs::write(dir.path().join(cfg.version_file), "2 2 6 0\n").unwrap();
         let v = installed_version(dir.path(), cfg).unwrap();
-        assert_eq!(v, SkseVersion { major: 2, minor: 2, patch: 6 });
+        assert_eq!(
+            v,
+            SkseVersion {
+                major: 2,
+                minor: 2,
+                patch: 6
+            }
+        );
     }
 }

@@ -121,10 +121,7 @@ pub async fn download_file(
 /// Returns a [`NetError`] if the client builder fails (extremely unlikely).
 pub fn build_client() -> Result<Client, NetError> {
     Client::builder()
-        .user_agent(concat!(
-            "mantle-manager/",
-            env!("CARGO_PKG_VERSION"),
-        ))
+        .user_agent(concat!("mantle-manager/", env!("CARGO_PKG_VERSION"),))
         .build()
         .map_err(NetError::Http)
 }

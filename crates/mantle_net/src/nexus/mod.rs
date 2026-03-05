@@ -62,9 +62,7 @@ impl NexusClient {
     pub fn new(api_key: impl Into<String>) -> Result<Self, NetError> {
         let api_key = api_key.into();
         if api_key.is_empty() {
-            return Err(NetError::Config(
-                "Nexus API key must not be empty".to_string(),
-            ));
+            return Err(NetError::Config("Nexus API key must not be empty".to_string()));
         }
         let client = Client::builder()
             .user_agent(concat!("mantle-manager/", env!("CARGO_PKG_VERSION")))
@@ -165,11 +163,8 @@ impl NexusClient {
         query: &str,
         nexus_game_id: u32,
     ) -> Result<SearchResponse, NetError> {
-        let url = format!(
-            "{SEARCH_BASE}/mods?terms={}&game_id={}",
-            urlencoded(query),
-            nexus_game_id,
-        );
+        let url =
+            format!("{SEARCH_BASE}/mods?terms={}&game_id={}", urlencoded(query), nexus_game_id,);
         // Search endpoint does not require apikey header.
         let resp = self.client.get(&url).send().await?;
         check_status(resp).await?.json::<SearchResponse>().await.map_err(NetError::Http)
@@ -179,17 +174,8 @@ impl NexusClient {
 
     /// Issue an authenticated GET to `url` and deserialise the JSON response.
     async fn get_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, NetError> {
-        let resp = self
-            .client
-            .get(url)
-            .header("apikey", &self.api_key)
-            .send()
-            .await?;
-        check_status(resp)
-            .await?
-            .json::<T>()
-            .await
-            .map_err(NetError::Http)
+        let resp = self.client.get(url).header("apikey", &self.api_key).send().await?;
+        check_status(resp).await?.json::<T>().await.map_err(NetError::Http)
     }
 }
 

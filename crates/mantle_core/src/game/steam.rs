@@ -155,7 +155,7 @@ pub fn detect_all(steam: &SteamDir) -> Result<Vec<GameInfo>, MantleError> {
         if let Some(pfx) = &g.proton_prefix {
             if let Some(extra_install) = find_extra_install_path(pfx, g.steam_app_id) {
                 if extra_install != g.install_path {
-                let Some(def) = games::by_app_id(g.steam_app_id) else {
+                    let Some(def) = games::by_app_id(g.steam_app_id) else {
                         continue;
                     };
                     let extra_data = def.data_path(&extra_install);
@@ -256,7 +256,11 @@ fn find_extra_install_path(pfx: &Path, app_id: u32) -> Option<PathBuf> {
     // Wine registry paths use Windows-style backslashes; normalise to forward
     // slashes for Linux path handling.
     let path = PathBuf::from(raw.replace('\\', "/"));
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

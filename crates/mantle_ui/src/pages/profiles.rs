@@ -48,7 +48,12 @@ use crate::state::{AppState, ProfileEntry};
 /// - `refresh`: Callback to trigger a full state reload after a DB mutation.
 /// - `event_bus`: Shared event bus — the activate button publishes a
 ///   [`ModManagerEvent::ProfileChanged`] event on successful activation.
-pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn Fn()>, event_bus: &Arc<EventBus>) -> GtkBox {
+pub fn build(
+    state: &AppState,
+    window: &adw::ApplicationWindow,
+    refresh: &Rc<dyn Fn()>,
+    event_bus: &Arc<EventBus>,
+) -> GtkBox {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     outer.append(&toolbar(window, refresh));

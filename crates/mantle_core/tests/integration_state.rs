@@ -15,12 +15,11 @@
 //! 2. **Game detection in CI** — `detect_all_steam()` completes without
 //!    panicking when Steam is absent.  Returns an empty list (no `game_data_path`).
 
-use mantle_core::{
-    data::{
-        profiles::{get_active_profile, insert_profile, list_profiles, set_active_profile, InsertProfile},
-        run_migrations,
-        Database,
+use mantle_core::data::{
+    profiles::{
+        get_active_profile, insert_profile, list_profiles, set_active_profile, InsertProfile,
     },
+    run_migrations, Database,
 };
 use rusqlite::Connection;
 
@@ -141,8 +140,7 @@ fn fresh_db_has_empty_mod_list() {
             )
         })
         .expect("insert_profile");
-    db.with_conn(|conn| set_active_profile(conn, pid))
-        .expect("set_active_profile");
+    db.with_conn(|conn| set_active_profile(conn, pid)).expect("set_active_profile");
 
     // Zero mods in the new profile.
     let mods = db

@@ -196,7 +196,8 @@ pub fn activate_profile(
     event_bus: &Arc<EventBus>,
 ) -> Result<MountHandle, MantleError> {
     // Capture the current active profile name for the ProfileChanged event.
-    let old_profile_name = get_active_profile(conn)?.map_or_else(|| String::from("none"), |p| p.name);
+    let old_profile_name =
+        get_active_profile(conn)?.map_or_else(|| String::from("none"), |p| p.name);
 
     // Verify the target profile exists before touching the VFS.
     let new_profile = get_profile_by_id(conn, profile_id)?
@@ -234,10 +235,7 @@ pub fn activate_profile(
     // Apply per-profile INI overrides if the caller supplied a game INI dir.
     // Errors here are non-fatal — log a warning and continue.
     if let Some(ini_dir) = game_ini_dir {
-        let profile_ini_dir = data_dir()
-            .join("profiles")
-            .join(profile_id.to_string())
-            .join("ini");
+        let profile_ini_dir = data_dir().join("profiles").join(profile_id.to_string()).join("ini");
         if let Err(e) = apply_profile_ini(&profile_ini_dir, ini_dir) {
             tracing::warn!(
                 "activate_profile: INI apply failed for profile {profile_id} — {e}; continuing"

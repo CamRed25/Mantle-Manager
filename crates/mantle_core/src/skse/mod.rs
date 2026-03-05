@@ -34,8 +34,8 @@ pub mod version;
 pub use config::{config_for_game, SkseGameConfig, SKSE_GAME_MAP};
 pub use download::DownloadConfig;
 pub use proton::write_dll_overrides;
-pub use version::{installed_version, parse_version_str, SkseVersion};
 pub use version::latest_version;
+pub use version::{installed_version, parse_version_str, SkseVersion};
 
 use std::path::{Path, PathBuf};
 
@@ -171,19 +171,12 @@ where
     let temp_base = cfg.temp_dir.as_deref().map_or_else(std::env::temp_dir, PathBuf::from);
     std::fs::create_dir_all(&temp_base)?;
 
-    let archive_name = skse_cfg
-        .download_url
-        .rsplit('/')
-        .next()
-        .unwrap_or("skse-latest");
+    let archive_name = skse_cfg.download_url.rsplit('/').next().unwrap_or("skse-latest");
     let archive_path = temp_base.join(archive_name);
 
-    download::download_file(
-        skse_cfg.download_url,
-        &archive_path,
-        &cfg.download,
-        |bytes, total| progress(SkseProgress::Downloading { bytes, total }),
-    )
+    download::download_file(skse_cfg.download_url, &archive_path, &cfg.download, |bytes, total| {
+        progress(SkseProgress::Downloading { bytes, total })
+    })
     .await?;
 
     // ── Step 5: Validate archive magic bytes ──────────────────────────────────
@@ -217,10 +210,7 @@ where
 
     // ── Step 8: Validate loader presence ─────────────────────────────────────
     progress(SkseProgress::Validating);
-    let loader_found = skse_cfg
-        .loader_names
-        .iter()
-        .any(|name| cfg.game_dir.join(name).exists());
+    let loader_found = skse_cfg.loader_names.iter().any(|name| cfg.game_dir.join(name).exists());
 
     if !loader_found {
         return Err(MantleError::Skse(format!(
@@ -243,10 +233,7 @@ where
 
     // ── Step 10: Write version marker file ───────────────────────────────────
     let version_path = cfg.game_dir.join(skse_cfg.version_file);
-    std::fs::write(
-        &version_path,
-        format!("{} {} {}\n", latest.major, latest.minor, latest.patch),
-    )?;
+    std::fs::write(&version_path, format!("{} {} {}\n", latest.major, latest.minor, latest.patch))?;
 
     // ── Step 11: Clean up downloaded archive ──────────────────────────────────
     if let Err(e) = std::fs::remove_file(&archive_path) {
@@ -283,15 +270,11 @@ async fn extract_and_flatten(archive: &Path, dest: &Path) -> Result<(), MantleEr
     crate::archive::extract_archive(archive, tmp.path()).await?;
 
     // Detect single top-level directory wrapper.
-    let top_entries: Vec<_> = std::fs::read_dir(tmp.path())?
-        .filter_map(std::result::Result::ok)
-        .collect();
+    let top_entries: Vec<_> =
+        std::fs::read_dir(tmp.path())?.filter_map(std::result::Result::ok).collect();
 
     let source = if top_entries.len() == 1
-        && top_entries[0]
-            .file_type()
-            .map(|ft| ft.is_dir())
-            .unwrap_or(false)
+        && top_entries[0].file_type().map(|ft| ft.is_dir()).unwrap_or(false)
     {
         top_entries[0].path()
     } else {
