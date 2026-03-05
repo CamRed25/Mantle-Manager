@@ -26,7 +26,7 @@
 //! [`EventBus`]: mantle_core::plugin::EventBus
 //! [`ModManagerEvent`]: mantle_core::plugin::ModManagerEvent
 
-use std::sync::{mpsc::Sender, Arc, Condvar, Mutex};
+use std::sync::{mpsc::Sender, Arc, Condvar, Mutex, OnceLock};
 
 use mantle_core::{
     config::{default_db_path, AppSettings},
@@ -40,6 +40,31 @@ use mantle_core::{
 };
 
 use crate::state::{AppState, ModEntry, ProfileEntry, ThemeEntry};
+
+// ─── Cached game detection ───────────────────────────────────────────────────
+
+/// Result of the one-time Steam game scan, cached for the lifetime of the
+/// process.
+///
+/// `detect_all_steam` scans the filesystem and registry; running it on every
+/// state refresh would add latency to every mod-toggle or profile-switch.
+/// The first detected game is almost never going to change during a session.
+static CACHED_GAME: OnceLock<Option<mantle_core::game::GameInfo>> = OnceLock::new();
+
+/// Return the first detected Steam game, running the scan at most once.
+///
+/// Subsequent calls return a reference to the cached result without touching
+/// the filesystem.  The cache is intentionally process-scoped (`OnceLock`)
+/// rather than invalidated on refresh — game installs and Steam re-scans are
+/// expected to require an application restart.
+fn load_game_state() -> &'static Option<mantle_core::game::GameInfo> {
+    CACHED_GAME.get_or_init(|| {
+        game::detect_all_steam()
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+    })
+}
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -231,16 +256,11 @@ fn load_state() -> anyhow::Result<AppState> {
         (vec![], 0_usize, 0_usize)
     };
 
-    // ── Assemble snapshot ─────────────────────────────────────────────────
-    // Game detection: run detect_all_steam() and pick the first result.
-    // If Steam is not installed or no supported game is found, all game
-    // fields are left empty and the launch button is disabled.
-    // ── Game detection ─────────────────────────────────────────────────────
-    // run detect_all_steam() and pick the first result.  If Steam is not
-    // installed or no supported title is found, game fields stay empty and
-    // the launch button is disabled.
-    let detected = game::detect_all_steam().unwrap_or_default();
-    let first_game = detected.into_iter().next();
+    // ── Game detection (cached) ────────────────────────────────────────────
+    // `load_game_state` runs `detect_all_steam` at most once per process;
+    // subsequent refreshes (mod enable, profile switch, etc.) reuse the
+    // static cache, keeping the common code-path free of filesystem I/O.
+    let first_game = load_game_state();
 
     let (steam_app_id, game_name, launch_target) = if let Some(ref g) = first_game {
         (
