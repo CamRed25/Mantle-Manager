@@ -1,16 +1,12 @@
-//! Plugins page — list of loaded Mantle plugins with enable/disable switches
-//! and inline settings panels.
+//! Plugins & Themes page — two inner sub-tabs sharing the Plugins tab slot.
 //!
-//! Each plugin is displayed as an [`adw::ExpanderRow`]:
-//! - Title: plugin name
-//! - Subtitle: version and author
-//! - Suffix: enable/disable [`gtk4::Switch`]
-//! - Expanded: description row + one [`adw::ActionRow`] per setting
+//! The outer widget is a vertical [`GtkBox`] containing a compact
+//! [`gtk4::StackSwitcher`] + [`gtk4::Stack`] that hosts two sub-pages:
 //!
-//! Plugins with no settings still expand to show the description.
-//!
-//! # Empty state
-//! When no plugins are loaded, an [`adw::StatusPage`] is shown.
+//! - **Plugins** — existing list of loaded Mantle plugins with enable/disable
+//!   switches and inline settings panels.
+//! - **Themes** — user-installed CSS themes with Apply / active indicators and
+//!   a folder-open shortcut for dropping new theme files.
 //!
 //! # References
 //! - `standards/UI_GUIDE.md` §3, §5.1, §5.3, §9
@@ -18,46 +14,89 @@
 //! - `path.md` item u
 
 use adw::prelude::*;
-use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, Switch};
+use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, Separator, Switch};
 use libadwaita as adw;
+use mantle_core::config::Theme;
 
-use crate::state::{AppState, PluginEntry, PluginSettingEntry};
+use crate::settings::{apply_theme, save_settings};
+use crate::state::{AppState, PluginEntry, PluginSettingEntry, UserThemeEntry};
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
-/// Build the full Plugins page widget tree.
+/// Build the full Plugins+Themes page widget tree.
 ///
-/// Returns a vertical [`GtkBox`] containing either a status page (no plugins)
-/// or the scrollable plugin list, suitable for insertion into an
-/// [`adw::ViewStack`].
+/// Returns a vertical [`GtkBox`] containing a compact inner tab switcher
+/// (Plugins | Themes) suitable for insertion into the main [`adw::ViewStack`].
 ///
 /// # Parameters
 /// - `state`: Read-only application state snapshot.
 pub fn build(state: &AppState) -> GtkBox {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
-    outer.append(&toolbar(state));
+    // ── Inner stack switcher ──────────────────────────────────────────────────
+    let stack = gtk4::Stack::builder()
+        .transition_type(gtk4::StackTransitionType::SlideLeftRight)
+        .transition_duration(150)
+        .vexpand(true)
+        .build();
 
-    if state.plugins.is_empty() {
-        outer.append(&empty_state());
-    } else {
-        outer.append(&plugin_scroll(state));
-    }
+    let switcher = gtk4::StackSwitcher::builder().stack(&stack).halign(gtk4::Align::Center).build();
+
+    // Thin separator between the switcher and the page content.
+    let sep = Separator::new(Orientation::Horizontal);
+    sep.add_css_class("spacer");
+
+    outer.append(&switcher_bar(&switcher));
+    outer.append(&sep);
+    outer.append(&stack);
+
+    // ── Plugins sub-page ─────────────────────────────────────────────────────
+    let plugins_page = plugins_subpage(state);
+    stack.add_titled(&plugins_page, Some("plugins"), "Plugins");
+
+    // ── Themes sub-page ──────────────────────────────────────────────────────
+    let themes_page = themes_subpage(state);
+    stack.add_titled(&themes_page, Some("themes"), "Themes");
 
     outer
 }
 
-// ─── Toolbar ─────────────────────────────────────────────────────────────────
+// ─── Switcher bar ─────────────────────────────────────────────────────────────
+
+/// Wrap the [`gtk4::StackSwitcher`] in a centred bar with top/bottom margins.
+fn switcher_bar(switcher: &gtk4::StackSwitcher) -> GtkBox {
+    let bar = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .margin_top(8)
+        .margin_bottom(4)
+        .halign(gtk4::Align::Fill)
+        .build();
+    bar.append(switcher);
+    bar
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Plugins sub-page
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn plugins_subpage(state: &AppState) -> GtkBox {
+    let page = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
+    page.append(&plugins_toolbar(state));
+    if state.plugins.is_empty() {
+        page.append(&plugins_empty_state());
+    } else {
+        page.append(&plugin_scroll(state));
+    }
+    page
+}
+
+// ─── Plugins toolbar ─────────────────────────────────────────────────────────
 
 /// Top toolbar showing loaded plugin count.
 ///
 /// The "Open plugins folder" button opens `{data_dir}/plugins/` for dropping
-/// new plugin files. Action is wired in item y; the button is non-functional
-/// in placeholder mode.
-///
-/// # Parameters
-/// - `state`: Provides the current plugin count.
-fn toolbar(state: &AppState) -> GtkBox {
+/// new plugin files. Action wired in item y; non-functional in placeholder mode.
+fn plugins_toolbar(state: &AppState) -> GtkBox {
     let bar = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -85,10 +124,9 @@ fn toolbar(state: &AppState) -> GtkBox {
     bar
 }
 
-// ─── Empty state ──────────────────────────────────────────────────────────────
+// ─── Plugins empty state ──────────────────────────────────────────────────────
 
-/// Status page shown when no plugins are currently loaded.
-fn empty_state() -> adw::StatusPage {
+fn plugins_empty_state() -> adw::StatusPage {
     adw::StatusPage::builder()
         .icon_name("application-x-executable-symbolic")
         .title("No Plugins Loaded")
@@ -99,10 +137,6 @@ fn empty_state() -> adw::StatusPage {
 
 // ─── Scrollable plugin list ───────────────────────────────────────────────────
 
-/// Wraps the plugin list in a [`ScrolledWindow`].
-///
-/// # Parameters
-/// - `state`: Source of the plugin list.
 fn plugin_scroll(state: &AppState) -> ScrolledWindow {
     let scroll = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -126,9 +160,6 @@ fn plugin_scroll(state: &AppState) -> ScrolledWindow {
 }
 
 /// Builds the [`ListBox`] containing one expandable row per plugin.
-///
-/// # Parameters
-/// - `state`: Source of the plugins list.
 fn plugin_list(state: &AppState) -> ListBox {
     let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
@@ -154,23 +185,13 @@ fn plugin_list(state: &AppState) -> ListBox {
 /// │  …                                               │
 /// ╰──────────────────────────────────────────────────╯
 /// ```
-///
-/// The suffix [`Switch`] controls whether the plugin is enabled.
-/// All plugins can be expanded regardless of enabled state so the user can
-/// inspect settings before enabling.
-///
-/// # Parameters
-/// - `entry`: Plugin data to display.
 fn plugin_row(entry: &PluginEntry) -> adw::ExpanderRow {
     let row = adw::ExpanderRow::builder()
         .title(&entry.name)
         .subtitle(format!("v{} · {}", entry.version, entry.author))
         .build();
-    // Set widget name from the stable plugin ID so CSS rules and automated
-    // tests can target individual plugin rows without relying on title text.
     row.set_widget_name(&entry.id);
 
-    // ── Enable / disable toggle ───────────────────────────────────────────────
     let toggle = Switch::new();
     toggle.set_active(entry.enabled);
     toggle.set_valign(gtk4::Align::Center);
@@ -179,16 +200,12 @@ fn plugin_row(entry: &PluginEntry) -> adw::ExpanderRow {
     } else {
         "Enable this plugin"
     }));
-    // UI guide §9: emit action, don't modify state directly.
-    // Real toggle handling wired in item y.
     row.add_suffix(&toggle);
 
-    // ── Description sub-row ───────────────────────────────────────────────────
     let desc_row = adw::ActionRow::builder().title(&entry.description).build();
     desc_row.add_css_class("property");
     row.add_row(&desc_row);
 
-    // ── Settings sub-rows ─────────────────────────────────────────────────────
     if entry.settings.is_empty() {
         let no_settings = adw::ActionRow::builder().title("No configurable settings").build();
         no_settings.set_sensitive(false);
@@ -204,35 +221,184 @@ fn plugin_row(entry: &PluginEntry) -> adw::ExpanderRow {
 
 // ─── Setting row ──────────────────────────────────────────────────────────────
 
-/// Build an [`adw::ActionRow`] for a single plugin setting.
-///
-/// Layout:
-/// ```text
-/// [Setting Label]           [current value]
-/// [description if present]
-/// ```
-///
-/// The current value is shown as a right-aligned suffix label.
-/// Real editing (click to change value) is deferred to item y.
-///
-/// # Parameters
-/// - `setting`: The setting entry to display.
 fn setting_row(setting: &PluginSettingEntry) -> adw::ActionRow {
     let row = adw::ActionRow::builder().title(&setting.label).build();
-    // Widget name = setting key so item y can look up rows by key when
-    // wiring live value changes (e.g. after an AdwDialog confirmation).
     row.set_widget_name(&setting.key);
 
     if let Some(desc) = &setting.description {
         row.set_subtitle(desc.as_str());
     }
 
-    // Current value badge on the right
     let value_label = Label::new(Some(&setting.value));
     value_label.add_css_class("caption");
     value_label.add_css_class("dim-label");
     value_label.set_valign(gtk4::Align::Center);
     row.add_suffix(&value_label);
+
+    row
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Themes sub-page
+// ═══════════════════════════════════════════════════════════════════════════════
+
+fn themes_subpage(state: &AppState) -> GtkBox {
+    let page = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
+    page.append(&themes_toolbar(state));
+    if state.themes.is_empty() {
+        page.append(&themes_empty_state());
+    } else {
+        page.append(&themes_scroll(state));
+    }
+    page
+}
+
+// ─── Themes toolbar ───────────────────────────────────────────────────────────
+
+fn themes_toolbar(state: &AppState) -> GtkBox {
+    let bar = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    let count = Label::new(Some(&format!("{} installed", state.themes.len())));
+    count.add_css_class("caption");
+    count.add_css_class("dim-label");
+    count.set_hexpand(true);
+    count.set_halign(gtk4::Align::Start);
+    count.set_valign(gtk4::Align::Center);
+    bar.append(&count);
+
+    let open_btn = gtk4::Button::builder()
+        .icon_name("folder-symbolic")
+        .tooltip_text("Open themes folder")
+        .build();
+    open_btn.add_css_class("flat");
+    bar.append(&open_btn);
+
+    bar
+}
+
+// ─── Themes empty state ───────────────────────────────────────────────────────
+
+fn themes_empty_state() -> adw::StatusPage {
+    adw::StatusPage::builder()
+        .icon_name("applications-graphics-symbolic")
+        .title("No Themes Installed")
+        .description(
+            "Drop a .css file into the themes folder to install a theme.\n\
+             An optional theme.toml alongside it provides name and author metadata.",
+        )
+        .vexpand(true)
+        .build()
+}
+
+// ─── Scrollable theme list ────────────────────────────────────────────────────
+
+fn themes_scroll(state: &AppState) -> ScrolledWindow {
+    let scroll = ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Never)
+        .vexpand(true)
+        .hexpand(true)
+        .build();
+
+    let content = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .margin_top(12)
+        .margin_bottom(12)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    content.append(&theme_list(state));
+    scroll.set_child(Some(&content));
+    scroll
+}
+
+/// Builds the [`ListBox`] containing one row per installed user theme.
+fn theme_list(state: &AppState) -> ListBox {
+    let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
+    list.add_css_class("boxed-list");
+
+    for entry in &state.themes {
+        list.append(&theme_row(entry));
+    }
+
+    list
+}
+
+// ─── Theme row ────────────────────────────────────────────────────────────────
+
+/// Build an [`adw::ActionRow`] for a single user theme.
+///
+/// Layout:
+/// ```text
+/// ╭─────────────────────────────────────────────────────╮
+/// │ [Theme Name]   [author]          [Apply] or [Active] │
+/// │ [description]                                        │
+/// ╰─────────────────────────────────────────────────────╯
+/// ```
+///
+/// Active theme shows a "Applied ✓" dim label instead of a button.
+/// Clicking Apply writes `Theme::Custom(id)` to settings and immediately
+/// applies the CSS.  Full settings-file persistence wired in item y.
+fn theme_row(entry: &UserThemeEntry) -> adw::ActionRow {
+    let row = adw::ActionRow::builder().title(&entry.name).build();
+    row.set_widget_name(&entry.id);
+
+    // Subtitle: author only if present, else description only.
+    let subtitle = match (entry.author.is_empty(), entry.description.is_empty()) {
+        (false, false) => format!("{} — {}", entry.author, entry.description),
+        (false, true) => entry.author.clone(),
+        (true, false) => entry.description.clone(),
+        (true, true) => String::new(),
+    };
+    if !subtitle.is_empty() {
+        row.set_subtitle(&subtitle);
+    }
+
+    if entry.active {
+        // Active indicator — no action button.
+        let active_label = Label::new(Some("Applied ✓"));
+        active_label.add_css_class("caption");
+        active_label.add_css_class("dim-label");
+        active_label.add_css_class("success");
+        active_label.set_valign(gtk4::Align::Center);
+        row.add_suffix(&active_label);
+    } else {
+        // Apply button — activates this theme immediately.
+        let apply_btn = gtk4::Button::builder()
+            .label("Apply")
+            .valign(gtk4::Align::Center)
+            .build();
+        apply_btn.add_css_class("flat");
+
+        let id = entry.id.clone();
+        let css = entry.css.clone();
+        let is_dark = entry.color_scheme != "light";
+
+        apply_btn.connect_clicked(move |_| {
+            let theme = Theme::Custom(id.clone());
+            // Apply the CSS immediately.
+            apply_theme(&theme, Some((css.as_str(), is_dark)));
+            // Persist the choice.  settings_path() resolves at call time so
+            // we use the same helper the settings dialog uses.
+            let settings_path = mantle_core::config::default_settings_path();
+            if let Ok(mut settings) =
+                mantle_core::config::AppSettings::load_or_default(&settings_path)
+            {
+                settings.ui.theme = theme;
+                save_settings(&settings, &settings_path);
+            }
+        });
+
+        row.add_suffix(&apply_btn);
+    }
 
     row
 }

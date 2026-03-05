@@ -33,6 +33,8 @@ pub struct ProfileModEntry {
     pub is_enabled: bool,
     /// `mods.install_dir`
     pub install_dir: String,
+    /// `mods.version` — semver string or raw version tag, if recorded.
+    pub version: Option<String>,
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ pub fn list_profile_mods(
 ) -> Result<Vec<ProfileModEntry>, MantleError> {
     let mut stmt = conn
         .prepare(
-            "SELECT m.id, m.slug, m.name, pm.priority, pm.is_enabled, m.install_dir
+            "SELECT m.id, m.slug, m.name, pm.priority, pm.is_enabled, m.install_dir, m.version
              FROM profile_mods pm
              INNER JOIN mods m ON m.id = pm.mod_id
              WHERE pm.profile_id = :profile_id
@@ -66,6 +68,7 @@ pub fn list_profile_mods(
                 priority: row.get(3)?,
                 is_enabled: row.get::<_, i64>(4)? != 0,
                 install_dir: row.get(5)?,
+                version: row.get(6)?,
             })
         })
         .map_err(MantleError::Database)?

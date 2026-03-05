@@ -164,16 +164,18 @@ pub fn build_dialog(settings: AppSettings, path: PathBuf) -> adw::PreferencesWin
 ///
 /// Must be called from the GTK main thread.  Called at application startup
 /// (before the window is shown) to honour the user's saved preference, and
-/// again whenever the theme combo row changes.
+/// again whenever the theme combo row or the Themes tab changes.
 ///
 /// # Parameters
 /// - `theme`: The [`Theme`] variant to activate.
+/// - `user_theme`: For [`Theme::Custom`], the `(css, is_dark)` pair resolved
+///   from the themes directory.  Pass `None` for all built-in themes.
 ///
 /// # Side Effects
 /// - Calls [`adw::StyleManager::set_color_scheme`] to set the dark/light base.
 /// - Installs (or removes) a custom [`gtk4::CssProvider`] for palette overrides
 ///   at `STYLE_PROVIDER_PRIORITY_APPLICATION`.
-pub fn apply_theme(theme: Theme) {
+pub fn apply_theme(theme: &Theme, user_theme: Option<(&str, bool)>) {
     // 1. Base dark/light mode — lets libadwaita render its own chrome correctly.
     let manager = adw::StyleManager::default();
     manager.set_color_scheme(match theme {
@@ -182,6 +184,11 @@ pub fn apply_theme(theme: Theme) {
         Theme::Dark | Theme::CatppuccinMocha | Theme::Nord | Theme::Skyrim | Theme::Fallout => {
             adw::ColorScheme::ForceDark
         }
+        Theme::Custom(_) => match user_theme {
+            Some((_, true)) => adw::ColorScheme::ForceDark,
+            Some((_, false)) => adw::ColorScheme::ForceLight,
+            None => adw::ColorScheme::Default,
+        },
     });
 
     // 2. CSS palette override (empty string = remove any existing provider).
@@ -192,6 +199,7 @@ pub fn apply_theme(theme: Theme) {
         Theme::Nord => NORD_CSS,
         Theme::Skyrim => SKYRIM_CSS,
         Theme::Fallout => FALLOUT_CSS,
+        Theme::Custom(_) => user_theme.map_or("", |(css, _)| css),
     };
     apply_theme_css(css);
 }
@@ -264,15 +272,16 @@ fn build_appearance_page(
         .subtitle("Override the system color scheme preference")
         .model(&model)
         .build();
-    theme_row.set_selected(theme_index(shared.borrow().ui.theme));
+    theme_row.set_selected(theme_index(&shared.borrow().ui.theme));
     {
         let shared = Rc::clone(shared);
         let path = path.to_path_buf();
         theme_row.connect_selected_notify(move |row| {
             let theme = theme_from_index(row.selected());
-            shared.borrow_mut().ui.theme = theme;
+            shared.borrow_mut().ui.theme = theme.clone();
             save_settings(&shared.borrow(), &path);
-            apply_theme(theme);
+            // Built-in themes never need user_theme CSS.
+            apply_theme(&theme, None);
         });
     }
     scheme_group.add(&theme_row);
@@ -447,9 +456,15 @@ fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::P
 // ─── Theme index helpers ──────────────────────────────────────────────────────
 
 /// Map a [`Theme`] variant to its position in the combo-row model.
-fn theme_index(theme: Theme) -> u32 {
+///
+/// [`Theme::Custom`] maps to 0 (System default) so the combo row degrades
+/// gracefully when a user theme is active — the user selects custom themes
+/// from the Plugins › Themes tab instead.
+fn theme_index(theme: &Theme) -> u32 {
     match theme {
-        Theme::Auto => 0,
+        // Custom themes managed via the Themes tab — degrade the combo to
+        // "System default" (0) so it does not show a stale built-in selection.
+        Theme::Auto | Theme::Custom(_) => 0,
         Theme::Light => 1,
         Theme::Dark => 2,
         Theme::CatppuccinMocha => 3,
@@ -490,7 +505,7 @@ fn theme_from_index(idx: u32) -> Theme {
 /// # Side Effects
 /// Creates `path` and its parent directories.  Temporarily creates
 /// `<path>.tmp` during the atomic write.
-fn save_settings(settings: &AppSettings, path: &std::path::Path) {
+pub fn save_settings(settings: &AppSettings, path: &std::path::Path) {
     if let Some(parent) = path.parent() {
         // Best-effort: if dir creation fails, the save below will also fail
         // and report the error via tracing::warn. No need to duplicate here.

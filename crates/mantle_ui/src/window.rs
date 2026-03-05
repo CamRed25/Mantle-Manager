@@ -61,12 +61,30 @@ use crate::{
 /// - Applies the saved color-scheme preference via [`settings::apply_theme`].
 /// - Launches background game detection + DB load (see [`state_worker::spawn`]).
 /// - Presents the main window.
+#[allow(clippy::too_many_lines)]
 pub fn build_ui(app: &adw::Application) {
     // Apply saved color scheme before any widgets render so the first frame
     // uses the correct theme.
     let settings_path = default_settings_path();
     let initial_settings = AppSettings::load_or_default(&settings_path).unwrap_or_default();
-    settings::apply_theme(initial_settings.ui.theme);
+
+    // Scan user themes so we can resolve CSS for a Custom theme at startup.
+    let themes_dir =
+        mantle_core::theme::themes_data_dir(&mantle_core::config::data_dir());
+    let user_themes = mantle_core::theme::scan_themes_dir(&themes_dir);
+    let custom_css: Option<(String, bool)> =
+        if let mantle_core::config::Theme::Custom(ref id) = initial_settings.ui.theme {
+            user_themes
+                .iter()
+                .find(|t| &t.id == id)
+                .map(|t| (t.css.clone(), t.color_scheme != "light"))
+        } else {
+            None
+        };
+    settings::apply_theme(
+        &initial_settings.ui.theme,
+        custom_css.as_ref().map(|(css, dark)| (css.as_str(), *dark)),
+    );
 
     // ── State channel (background loader → GTK thread) ────────────────────
     // std::sync::mpsc is used because glib::MainContext::channel was removed
@@ -287,7 +305,23 @@ fn build_main_content(
 ) -> (adw::ViewStack, gtk4::ScrolledWindow) {
     let stack = adw::ViewStack::new();
 
-    let ov_page = stack.add_titled(&overview::build(state), Some("overview"), "Overview");
+    // Create the navigate_to_mods closure before building the overview page so
+    // it can capture a weak reference to the stack.  Using a weak reference
+    // avoids a reference cycle (stack → overview widget → closure → stack).
+    let navigate_to_mods: Rc<dyn Fn()> = {
+        let stack_weak = stack.downgrade();
+        Rc::new(move || {
+            if let Some(s) = stack_weak.upgrade() {
+                s.set_visible_child_name("mods");
+            }
+        })
+    };
+
+    let ov_page = stack.add_titled(
+        &overview::build(state, Rc::clone(&navigate_to_mods), refresh),
+        Some("overview"),
+        "Overview",
+    );
     ov_page.set_icon_name(Some("go-home-symbolic"));
 
     let mods_page =

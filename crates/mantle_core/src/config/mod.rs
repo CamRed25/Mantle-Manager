@@ -36,11 +36,13 @@ const FLATPAK_APP_ID: &str = "io.mantlemanager.MantleManager";
 
 /// UI colour scheme preference.
 ///
-/// Serialises to/from `snake_case` strings in `settings.toml`.  Single-word
-/// variants (`auto`, `light`, `dark`) are identical to the old lowercase
-/// format — no migration needed for existing settings files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+/// Built-in variants serialise as `snake_case` strings in `settings.toml`
+/// (e.g. `"catppuccin_mocha"`).  User-installed themes serialise as
+/// `"custom:{id}"` (e.g. `"custom:my-theme"`).
+///
+/// `Theme` is not `Copy` because `Custom` holds an owned `String`.
+/// Use `.clone()` when a second owned value is needed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Theme {
     /// Follow the system/desktop preference (libadwaita native).
     #[default]
@@ -59,19 +61,69 @@ pub enum Theme {
     Skyrim,
     /// Fallout-inspired — Pip-Boy terminal green on near-black.
     Fallout,
+    /// A user-installed theme identified by its file stem.
+    ///
+    /// Serialises as `"custom:{id}"`.  The CSS and colour-scheme hint are
+    /// resolved at runtime by scanning the themes directory.
+    Custom(String),
 }
 
 impl std::fmt::Display for Theme {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Auto => "System default",
-            Self::Light => "Light",
-            Self::Dark => "Dark",
-            Self::CatppuccinMocha => "Catppuccin Mocha",
-            Self::CatppuccinLatte => "Catppuccin Latte",
-            Self::Nord => "Nord",
-            Self::Skyrim => "Skyrim",
-            Self::Fallout => "Fallout",
+        match self {
+            Self::Auto => f.write_str("System default"),
+            Self::Light => f.write_str("Light"),
+            Self::Dark => f.write_str("Dark"),
+            Self::CatppuccinMocha => f.write_str("Catppuccin Mocha"),
+            Self::CatppuccinLatte => f.write_str("Catppuccin Latte"),
+            Self::Nord => f.write_str("Nord"),
+            Self::Skyrim => f.write_str("Skyrim"),
+            Self::Fallout => f.write_str("Fallout"),
+            Self::Custom(id) => write!(f, "{id}"),
+        }
+    }
+}
+
+// Manual Serialize/Deserialize so Custom(id) round-trips as "custom:id".
+
+impl Serialize for Theme {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        // Build the serialised string without an early return so `s` is only
+        // consumed once in the final `serialize_str` call.
+        let custom_buf;
+        let val: &str = match self {
+            Self::Auto => "auto",
+            Self::Light => "light",
+            Self::Dark => "dark",
+            Self::CatppuccinMocha => "catppuccin_mocha",
+            Self::CatppuccinLatte => "catppuccin_latte",
+            Self::Nord => "nord",
+            Self::Skyrim => "skyrim",
+            Self::Fallout => "fallout",
+            Self::Custom(id) => {
+                custom_buf = format!("custom:{id}");
+                &custom_buf
+            }
+        };
+        s.serialize_str(val)
+    }
+}
+
+impl<'de> Deserialize<'de> for Theme {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "auto" => Self::Auto,
+            "light" => Self::Light,
+            "dark" => Self::Dark,
+            "catppuccin_mocha" => Self::CatppuccinMocha,
+            "catppuccin_latte" => Self::CatppuccinLatte,
+            "nord" => Self::Nord,
+            "skyrim" => Self::Skyrim,
+            "fallout" => Self::Fallout,
+            s if s.starts_with("custom:") => Self::Custom(s["custom:".len()..].to_owned()),
+            // Unknown value: fall back to Auto rather than failing.
+            _ => Self::Auto,
         })
     }
 }
@@ -473,7 +525,7 @@ mod tests {
 
     #[test]
     fn theme_all_variants_roundtrip() {
-        for theme in [
+        let themes = [
             Theme::Auto,
             Theme::Light,
             Theme::Dark,
@@ -482,18 +534,21 @@ mod tests {
             Theme::Nord,
             Theme::Skyrim,
             Theme::Fallout,
-        ] {
+        ];
+        for theme in &themes {
             let mut s = AppSettings::default();
-            s.ui.theme = theme;
+            // Clone before moving into the struct so we can use `theme` again
+            // in the assertion.
+            s.ui.theme = theme.clone();
             let t = toml::to_string_pretty(&s).unwrap();
             let r: AppSettings = toml::from_str(&t).unwrap();
-            assert_eq!(r.ui.theme, theme, "roundtrip failed for {theme}");
+            assert_eq!(&r.ui.theme, theme, "roundtrip failed for {theme}");
         }
     }
 
     #[test]
     fn theme_display_names_non_empty() {
-        for theme in [
+        let themes = [
             Theme::Auto,
             Theme::Light,
             Theme::Dark,
@@ -502,7 +557,9 @@ mod tests {
             Theme::Nord,
             Theme::Skyrim,
             Theme::Fallout,
-        ] {
+            Theme::Custom("my-theme".to_string()),
+        ];
+        for theme in &themes {
             assert!(!theme.to_string().is_empty(), "{theme:?} has empty display name");
         }
     }
@@ -518,13 +575,37 @@ mod tests {
         ];
         for (theme, expected) in cases {
             let mut s = AppSettings::default();
-            s.ui.theme = theme;
+            // Clone before moving into the struct so `theme` is still
+            // available inside the assert! format string.
+            s.ui.theme = theme.clone();
             let toml_str = toml::to_string_pretty(&s).unwrap();
             assert!(
                 toml_str.contains(&format!("theme = \"{expected}\"")),
                 "{theme:?} must serialise as \"{expected}\", got:\n{toml_str}",
             );
         }
+    }
+
+    /// Custom theme roundtrips as "custom:{id}".
+    #[test]
+    fn custom_theme_roundtrip() {
+        let mut s = AppSettings::default();
+        s.ui.theme = Theme::Custom("gruvbox-dark".to_string());
+        let toml_str = toml::to_string_pretty(&s).unwrap();
+        assert!(
+            toml_str.contains("theme = \"custom:gruvbox-dark\""),
+            "Custom theme must serialise as 'custom:id', got:\n{toml_str}"
+        );
+        let r: AppSettings = toml::from_str(&toml_str).unwrap();
+        assert_eq!(r.ui.theme, Theme::Custom("gruvbox-dark".to_string()));
+    }
+
+    /// Unknown theme string deserialises to Auto rather than failing.
+    #[test]
+    fn unknown_theme_falls_back_to_auto() {
+        let toml_str = "[ui]\ntheme = \"nonexistent_theme\"";
+        let s: AppSettings = toml::from_str(toml_str).unwrap();
+        assert_eq!(s.ui.theme, Theme::Auto);
     }
 
     // ── opt_path_serde ────────────────────────────────────────────────────

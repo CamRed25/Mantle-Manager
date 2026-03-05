@@ -23,6 +23,8 @@ pub struct AppState {
     pub downloads: Vec<DownloadEntry>,
     /// Loaded Mantle plugins, in load order.
     pub plugins: Vec<PluginEntry>,
+    /// User-installed themes discovered in `{data_dir}/themes/`.
+    pub themes: Vec<UserThemeEntry>,
     /// Filesystem path to the game's Data directory.
     ///
     /// Used as the VFS `merge_dir` target when mounting mods before launch.
@@ -66,6 +68,26 @@ pub struct DownloadEntry {
     pub id: String,
     pub name: String,
     pub state: DownloadState,
+}
+
+// ─── Theme types ──────────────────────────────────────────────────────────────
+
+/// Display snapshot for a single user-installed theme.
+pub struct UserThemeEntry {
+    /// Stable ID derived from the CSS filename stem.
+    pub id: String,
+    /// Human-readable display name (from manifest or falls back to id).
+    pub name: String,
+    /// Author / maintainer name (empty when not specified).
+    pub author: String,
+    /// Short description (empty when not specified).
+    pub description: String,
+    /// Colour scheme hint: `"dark"`, `"light"`, or `"auto"`.
+    pub color_scheme: String,
+    /// Full CSS content — passed to `apply_theme` when activated.
+    pub css: String,
+    /// Whether this is the currently active theme.
+    pub active: bool,
 }
 
 // ─── Plugin types ─────────────────────────────────────────────────────────────
@@ -168,6 +190,26 @@ impl AppState {
                     id: "dl-4".to_string(),
                     name: "Immersive Armors SE".to_string(),
                     state: DownloadState::Failed("Connection timeout".to_string()),
+                },
+            ],
+            themes: vec![
+                UserThemeEntry {
+                    id: "gruvbox-dark".to_string(),
+                    name: "Gruvbox Dark".to_string(),
+                    author: "Community".to_string(),
+                    description: "Warm retro-groove colour scheme with earthy tones.".to_string(),
+                    color_scheme: "dark".to_string(),
+                    css: "@define-color accent_color #d79921;".to_string(),
+                    active: false,
+                },
+                UserThemeEntry {
+                    id: "solarized-light".to_string(),
+                    name: "Solarized Light".to_string(),
+                    author: "Ethan Schoonover".to_string(),
+                    description: "Precision colours for machines and people.".to_string(),
+                    color_scheme: "light".to_string(),
+                    css: "@define-color accent_color #268bd2;".to_string(),
+                    active: false,
                 },
             ],
             game_data_path: None,

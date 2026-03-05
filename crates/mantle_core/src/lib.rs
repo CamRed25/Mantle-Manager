@@ -17,6 +17,7 @@
 //! ├── mod_list — Mod list state and ordering
 //! ├── plugin   — Extension/scripting system (PluginContext, EventBus, Rhai)
 //! ├── profile  — Profile CRUD and activation
+//! ├── theme    — User-installable theme discovery (scan {data_dir}/themes/)
 //! ├── vfs      — Virtual filesystem backend (overlayfs / fuse / symlink)
 //! └── error    — Root error type (MantleError)
 //! ```
@@ -32,6 +33,7 @@ pub mod install;
 pub mod mod_list;
 pub mod plugin;
 pub mod profile;
+pub mod theme;
 pub mod vfs;
 
 /// Re-export the root error type at the crate top level so callers

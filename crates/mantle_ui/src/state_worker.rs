@@ -28,7 +28,10 @@ use std::sync::mpsc::Sender;
 
 use mantle_core::{
     config::{default_db_path, AppSettings},
-    data::{profiles, Database},
+    data::{
+        profiles::{self, InsertProfile},
+        Database,
+    },
     game, mod_list, vfs,
 };
 
@@ -98,7 +101,26 @@ fn load_state() -> anyhow::Result<AppState> {
         AppSettings::load_or_default(&default_settings_path()).unwrap_or_default()
     };
 
-    // ── Profiles ──────────────────────────────────────────────────────────
+    // ── Profiles — first-run bootstrap ────────────────────────────────────
+    // If the database is brand new, no profiles exist.  Create a "Default"
+    // profile and make it active so the rest of load_state() always has
+    // something to work with, and the UI can show the mods page immediately
+    // rather than a perpetual empty state.
+    let first_run = db.with_conn(profiles::list_profiles)?.is_empty();
+    if first_run {
+        tracing::info!("state_worker: no profiles found — creating Default profile");
+        let default_id = db.with_conn(|conn| {
+            profiles::insert_profile(
+                conn,
+                &InsertProfile {
+                    name: "Default",
+                    game_slug: None,
+                },
+            )
+        })?;
+        db.with_conn(|conn| profiles::set_active_profile(conn, default_id))?;
+    }
+
     let all_profiles = db.with_conn(profiles::list_profiles)?;
     let active = db.with_conn(profiles::get_active_profile)?;
 
@@ -176,6 +198,8 @@ fn load_state() -> anyhow::Result<AppState> {
         // Download queue lives in-memory only; no DB persistence yet.
         downloads: vec![],
         plugins: plugin_entries,
+        // User themes are discovered from disk at startup; deferred to item t.
+        themes: vec![],
         // Data directory used as the VFS merge_dir target during launch mount.
         game_data_path: first_game.as_ref().map(|g| g.data_path.clone()),
     })
@@ -255,9 +279,9 @@ fn build_mod_list_with_conflicts(
             profile_id,
             name: m.mod_name,
             enabled: m.is_enabled,
-            // mod_version not stored in profile_mods yet; deferred until
-            // the archive extraction layer populates mods.metadata.
-            version: None,
+            // mods.version is populated by the archive extraction install
+            // pipeline when the mod is installed from an archive.
+            version: m.version.clone(),
             has_conflict: conflict_by_id.get(&m.mod_id).copied().unwrap_or(false),
         })
         .collect();
@@ -307,8 +331,9 @@ fn load_plugins(
             id: m.mod_id,
             slug: m.mod_slug,
             name: m.mod_name,
-            // version and author not stored in profile_mods; left empty.
-            version: String::new(),
+            // version is now populated from mods.version; author is not stored
+            // in profile_mods and remains empty until a metadata pass is added.
+            version: m.version.unwrap_or_default(),
             author: String::new(),
             priority: m.priority,
             is_enabled: m.is_enabled,
