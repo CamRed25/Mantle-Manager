@@ -109,17 +109,17 @@ fn spawn_download(
             &url,
             &dest,
             move |ev| {
-                if let mantle_net::download::DownloadEvent::Progress { downloaded, total } = ev {
-                    let progress = total.map_or(0.0, |t| downloaded as f64 / t as f64);
-                    let _ = tx.send(DownloadProgress {
-                        id,
-                        status: DownloadStatus::InProgress {
-                            progress,
-                            bytes_done: downloaded,
-                            total_bytes: total,
-                        },
-                    });
-                }
+                let mantle_net::download::DownloadEvent::Progress { downloaded, total } = ev;
+                #[allow(clippy::cast_precision_loss)]
+                let progress = total.map_or(0.0, |t| downloaded as f64 / t as f64);
+                let _ = tx.send(DownloadProgress {
+                    id,
+                    status: DownloadStatus::InProgress {
+                        progress,
+                        bytes_done: downloaded,
+                        total_bytes: total,
+                    },
+                });
             },
             &client,
         ));
@@ -186,7 +186,10 @@ impl DownloadQueue {
     /// # Returns
     /// The [`Uuid`] assigned to the new job.
     // Will be called from the downloads page once item-14 wires the UI.
+    // `dest` is consumed by `spawn_download` in the `net` feature path;
+    // without `net` it is only cloned, causing a needless-pass-by-value warning.
     #[allow(dead_code)]
+    #[cfg_attr(not(feature = "net"), allow(clippy::needless_pass_by_value))]
     pub fn enqueue(
         &mut self,
         url: impl Into<String>,

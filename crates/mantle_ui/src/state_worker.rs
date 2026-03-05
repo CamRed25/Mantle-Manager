@@ -57,13 +57,13 @@ static CACHED_GAME: OnceLock<Option<mantle_core::game::GameInfo>> = OnceLock::ne
 /// the filesystem.  The cache is intentionally process-scoped (`OnceLock`)
 /// rather than invalidated on refresh — game installs and Steam re-scans are
 /// expected to require an application restart.
-fn load_game_state() -> &'static Option<mantle_core::game::GameInfo> {
+fn load_game_state() -> Option<&'static mantle_core::game::GameInfo> {
     CACHED_GAME.get_or_init(|| {
         game::detect_all_steam()
             .unwrap_or_default()
             .into_iter()
             .next()
-    })
+    }).as_ref()
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -262,7 +262,7 @@ fn load_state() -> anyhow::Result<AppState> {
     // static cache, keeping the common code-path free of filesystem I/O.
     let first_game = load_game_state();
 
-    let (steam_app_id, game_name, launch_target) = if let Some(ref g) = first_game {
+    let (steam_app_id, game_name, launch_target) = if let Some(g) = first_game {
         (
             Some(g.steam_app_id),
             g.name.clone(),
@@ -281,7 +281,7 @@ fn load_state() -> anyhow::Result<AppState> {
         active_profile_id,
         &active_profile_name,
         &profile_names,
-        first_game.as_ref(),
+        first_game,
     );
 
     Ok(AppState {

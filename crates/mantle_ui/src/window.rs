@@ -50,6 +50,8 @@ use crate::{
     state::AppState,
     state_worker,
 };
+#[cfg(feature = "net")]
+use crate::pages::nexus_search;
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -315,20 +317,40 @@ pub fn build_ui(app: &adw::Application) {
 
     // ── Idle poll: drain download progress channel ────────────────────────
     //
-    // Each message updates one job's status in the queue.  No full page
-    // rebuild is triggered here (scaffolding); the next user interaction or
-    // state refresh will naturally repaint the downloads page.
+    // Drains all pending DownloadProgress messages from background tasks in
+    // one pass, applies each to the in-memory queue, then — if anything
+    // changed — rebuilds the Downloads page widget tree so the user sees live
+    // progress bars, status badges, and completion markers immediately.
+    //
+    // This runs continuously on the GTK main-thread idle queue.  The cost per
+    // frame when the queue is empty is a single non-blocking try_recv() call.
     let queue_prog = Rc::clone(&queue_rc);
+    let handles_prog = Rc::clone(&page_handles_rc);
+    let refresh_prog = Rc::clone(&refresh_fn);
     glib::idle_add_local(move || {
         use std::sync::mpsc::TryRecvError;
+        let mut had_updates = false;
         loop {
             match progress_rx.try_recv() {
                 Ok(prog) => {
                     queue_prog.borrow_mut().apply_progress(prog);
+                    had_updates = true;
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return glib::ControlFlow::Break,
             }
+        }
+        // Rebuild the downloads page widget tree whenever progress arrives so
+        // progress bars and status badges reflect the latest queue snapshot.
+        if had_updates {
+            swap_wrap_child(
+                &handles_prog.borrow().downloads_wrap,
+                &downloads::build(
+                    &queue_prog.borrow().snapshot(),
+                    &queue_prog,
+                    &refresh_prog,
+                ),
+            );
         }
         glib::ControlFlow::Continue
     });
@@ -498,6 +520,15 @@ fn build_main_content(
     downloads_wrap.append(&downloads::build(&queue.borrow().snapshot(), queue, refresh));
     let downloads_page = stack.add_titled(&downloads_wrap, Some("downloads"), "Downloads");
     downloads_page.set_icon_name(Some("folder-download-symbolic"));
+
+    // Nexus Mod Search — built once, manages its own internal state.
+    // Only compiled and shown when the `net` feature is enabled.
+    #[cfg(feature = "net")]
+    {
+        let nexus_root = nexus_search::build(queue, refresh, toast_overlay);
+        let nexus_page = stack.add_titled(&nexus_root, Some("nexus"), "Search");
+        nexus_page.set_icon_name(Some("system-search-symbolic"));
+    }
 
     // Profiles — stable wrapper, child swapped on update.
     let profiles_wrap = GtkBox::builder().orientation(gtk4::Orientation::Vertical).build();
