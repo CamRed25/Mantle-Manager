@@ -37,95 +37,185 @@ use gtk4::{
 };
 use libadwaita as adw;
 use mantle_core::{
-    config::default_db_path,
-    data::Database,
     plugin::{EventBus, ModManagerEvent, ModInfo},
-    Error as CoreError,
 };
 
+use crate::pages::shared::with_db_s as with_db;
 use crate::state::{AppState, ModEntry};
 
-// ─── DB helper ────────────────────────────────────────────────────────────────
+// ─── Page handle ───────────────────────────────────────────────────────────────────
 
-/// Open the default database, run `f`, and map any error to `String`.
+/// Stable widget references returned by [`build`] and consumed by [`update`].
 ///
-/// Keeps mod-row callbacks free of boilerplate.
-///
-/// # Parameters
-/// - `f`: Closure receiving a shared `&Database` reference.
-///
-/// # Returns
-/// `Ok(T)` on success, `Err(String)` if opening the DB or running `f` fails.
-fn with_db<F, T>(f: F) -> Result<T, String>
-where
-    F: FnOnce(&Database) -> Result<T, CoreError>,
-{
-    let db = Database::open(&default_db_path()).map_err(|e| e.to_string())?;
-    f(&db).map_err(|e| e.to_string())
+/// Holds the mutable data-bound parts of the Mods page so that [`update`]
+/// can refresh them without rebuilding the widget tree, preserving user input
+/// state (search query, scroll position).
+pub struct ModsHandle {
+    /// `GtkBox` that holds the conflict banner (if any) plus the list scroll
+    /// or empty status page.  Cleared and repopulated on each [`update`].
+    pub data_box: GtkBox,
+    /// The stable list box — rows are cleared and re-added in place so the
+    /// search filter function (which captures `search_text`) keeps working.
+    pub list: ListBox,
+    /// The scroll wrapper around `list` — added to `data_box` when non-empty.
+    pub list_scroll: ScrolledWindow,
+    /// Shared search text cell written by the [`gtk4::SearchEntry`] and read
+    /// by the `ListBox` filter closure.  Must outlive both widgets.
+    /// Current search filter text.  Kept alive here so external callers can
+    /// read or reset the filter (e.g., for save/restore).  The filter func
+    /// holds its own `Rc` clone, so the filtering works even before any external
+    /// reader is added.  Will be used in Tier 3/g when search state is persisted.
+    #[allow(dead_code)]
+    pub search_text: Rc<RefCell<String>>,
+    /// "N mods" badge in the toolbar — updated in place to avoid rebuilding
+    /// the toolbar row (which would destroy the `SearchEntry`).
+    pub count_label: Label,
+    /// Empty-state status page — appended to `data_box` when the mod list is empty.
+    pub empty_status: adw::StatusPage,
 }
+
+// ─── DB helper ────────────────────────────────────────────────────────────────
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
 /// Build the full Mods page widget tree.
 ///
-/// Returns a [`GtkBox`] with a search bar on top and a scrollable mod list
-/// below, suitable for insertion into an [`adw::ViewStack`].
+/// Returns `(root_widget, handle)`: the root is placed into an
+/// [`adw::ViewStack`]; the handle is stored by `window.rs` for subsequent
+/// in-place updates via [`update`], which preserves the
+/// [`gtk4::SearchEntry`] text and focus state across state refreshes.
 ///
 /// # Parameters
 /// - `state`: Read-only snapshot of current application state.
-/// - `window`: Main application window; transient parent for the install dialog.
+/// - `window`: Main application window; transient parent for install dialogs.
 /// - `refresh`: Callback to queue a full state reload after a DB mutation.
 /// - `toast_overlay`: Toast target forwarded to the install dialog.
-///
-/// # Returns
-/// A vertical `GtkBox` containing all child widgets.
+/// - `event_bus`: Shared event bus for publishing mod-enabled/disabled events.
 pub fn build(
     state: &AppState,
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
     event_bus: &Arc<EventBus>,
-) -> GtkBox {
+) -> (GtkBox, ModsHandle) {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
-    // Shared search text — written by the SearchEntry, read by the filter func.
+    // Shared search text — written once by the SearchEntry; the filter func on
+    // the stable ListBox reads it on every invalidate_filter() call, so the
+    // current query survives data-area rebuilds.
     let search_text: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
 
-    // Build the ListBox first so the toolbar's SearchEntry can call
-    // invalidate_filter() on it.
+    // Stable count badge in the toolbar so update() can change the text
+    // without touching the SearchEntry.
+    let count_label = Label::new(Some(&format!("{} mods", state.mod_count)));
+    count_label.add_css_class("caption");
+    count_label.add_css_class("dim-label");
+    count_label.set_valign(gtk4::Align::Center);
+
+    // Build the ListBox once; it lives for the page lifetime so the filter
+    // closure captured by the SearchEntry always refers to the same object.
     let list = mod_list_box(state, refresh, Rc::clone(&search_text), event_bus);
 
-    outer.append(&toolbar_bar(state, &list, Rc::clone(&search_text), window, toast_overlay));
+    // Stable scroll wrapper — added/removed from data_box without recreation.
+    let list_scroll = mod_scroll(&list);
+
+    // Persistent empty state page — toggled into data_box when mods is empty.
+    let empty_status = empty_state();
+
+    outer.append(&toolbar_bar(&count_label, &list, Rc::clone(&search_text), window, toast_overlay));
     outer.append(&Separator::new(Orientation::Horizontal));
 
+    // data_box holds the conflict banner + list scroll or empty status.
+    // Cleared and repopulated by update() and populate_data_box().
+    let data_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
+    populate_data_box(&data_box, state, &list_scroll, &empty_status);
+    outer.append(&data_box);
+
+    (outer, ModsHandle { data_box, list, list_scroll, search_text, count_label, empty_status })
+}
+
+/// Refresh the Mods page in place without rebuilding the widget tree.
+///
+/// Preserves the [`gtk4::SearchEntry`] text by only clearing and repopulating
+/// the data-bound widgets inside `handle`.  Called by `window.rs` on every
+/// state delivery instead of a full `build()` call.
+///
+/// # Parameters
+/// - `handle`: Stable widget refs returned by the initial [`build`] call.
+/// - `state`: New application state snapshot.
+/// - `refresh`: Updated callback (re-wired each state delivery).
+/// - `event_bus`: Shared event bus for switch-toggle events.
+pub fn update(
+    handle: &ModsHandle,
+    state: &AppState,
+    refresh: &Rc<dyn Fn()>,
+    event_bus: &Arc<EventBus>,
+) {
+    // Update the mod count badge in the toolbar.
+    handle.count_label.set_label(&format!("{} mods", state.mod_count));
+
+    // Clear and repopulate rows in the stable ListBox.
+    // The filter func is still wired to handle.search_text so the current
+    // query is applied to the new rows immediately after invalidate_filter.
+    while let Some(child) = handle.list.first_child() {
+        handle.list.remove(&child);
+    }
+    for (idx, entry) in state.mods.iter().enumerate() {
+        handle.list.append(&mod_row(idx + 1, entry, refresh, event_bus));
+    }
+    handle.list.invalidate_filter();
+
+    // Rebuild the data area (conflict banner + list or empty state).
+    populate_data_box(&handle.data_box, state, &handle.list_scroll, &handle.empty_status);
+}
+
+// ─── Data area helper ─────────────────────────────────────────────────────────
+
+/// Clear and repopulate the data container with an optional conflict banner
+/// and either the list scroll or the empty-state page.
+///
+/// Called during initial [`build`] and on every [`update`] call.
+///
+/// # Parameters
+/// - `data_box`: Container to clear and refill.
+/// - `state`: Provides conflict count and empty-mod-list check.
+/// - `list_scroll`: Scrolled list shown when mods are present.
+/// - `empty_status`: Status page shown when the mod list is empty.
+fn populate_data_box(
+    data_box: &GtkBox,
+    state: &AppState,
+    list_scroll: &ScrolledWindow,
+    empty_status: &adw::StatusPage,
+) {
+    while let Some(child) = data_box.first_child() {
+        data_box.remove(&child);
+    }
     if state.conflict_count > 0 {
-        outer.append(&conflict_banner(state));
+        data_box.append(&conflict_banner(state));
     }
-
     if state.mods.is_empty() {
-        outer.append(&empty_state());
+        data_box.append(empty_status);
     } else {
-        outer.append(&mod_scroll(&list));
+        data_box.append(list_scroll);
     }
-
-    outer
 }
 
 // ─── Toolbar (search + count + add) ──────────────────────────────────────────
 
 /// Build the top toolbar: [`SearchEntry`], mod count label, and "Add Mod" button.
 ///
-/// The [`SearchEntry`] updates `search_text` on every keystroke and calls
-/// [`ListBox::invalidate_filter`] on `list` so the filter func re-runs.
+/// The [`SearchEntry`] and `count_label` are built outside this function so
+/// they can be stored in [`ModsHandle`] and survive data-area rebuilds.
+/// `count_label` is passed in; `SearchEntry` is created here.
 ///
 /// # Parameters
-/// - `state`: Provides the current mod count for the badge label.
+/// - `count_label`: Stable label showing "N mods" (updated by [`update`]).
 /// - `list`: The [`ListBox`] to invalidate when search text changes.
 /// - `search_text`: Shared cell written by the search entry.
 /// - `window`: Transient parent for the "Add Mod" file chooser.
 /// - `toast_overlay`: Toast target for installation feedback.
 fn toolbar_bar(
-    state: &AppState,
+    count_label: &Label,
     list: &ListBox,
     search_text: Rc<RefCell<String>>,
     window: &adw::ApplicationWindow,
@@ -140,7 +230,9 @@ fn toolbar_bar(
         .margin_end(12)
         .build();
 
-    // Search entry — updates search_text and invalidates the ListBox filter.
+    // Search entry — built once; lives for the toolbar lifetime.
+    // The search_text cell and the list invalidation are wired here;
+    // update() never touches this bar so the query survives refreshes.
     let search = SearchEntry::builder().placeholder_text("Search mods…").hexpand(true).build();
     search.set_tooltip_text(Some("Filter the mod list by name"));
 
@@ -151,12 +243,8 @@ fn toolbar_bar(
     });
     bar.append(&search);
 
-    // Mod count badge.
-    let count = Label::new(Some(&format!("{} mods", state.mod_count)));
-    count.add_css_class("caption");
-    count.add_css_class("dim-label");
-    count.set_valign(gtk4::Align::Center);
-    bar.append(&count);
+    // Stable count label passed in from build().
+    bar.append(count_label);
 
     // "Add Mod" button — opens the shared file chooser from window.rs.
     let add_btn = gtk4::Button::builder()
@@ -369,7 +457,7 @@ fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>, event_bus:
     let pid = entry.profile_id;
     let mod_name = entry.name.clone();
     let mod_version = entry.version.clone().unwrap_or_default();
-    let mod_priority = priority as i64;
+    let mod_priority = i64::try_from(priority).unwrap_or(i64::MAX);
     let refresh_sw = Rc::clone(refresh);
     let bus_sw = Arc::clone(event_bus);
     toggle.connect_state_set(move |_, enabled| {

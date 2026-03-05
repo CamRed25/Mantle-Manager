@@ -32,6 +32,7 @@ use gtk4::{glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, Sep
 use libadwaita as adw;
 use mantle_core::plugin::{EventBus, ModManagerEvent};
 
+use crate::pages::shared::with_db_s as with_db;
 use crate::state::{AppState, ProfileEntry};
 
 // ─── Public entry point ───────────────────────────────────────────────────────
@@ -65,23 +66,6 @@ pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn
 }
 
 // ─── Private DB helper ────────────────────────────────────────────────────────
-
-/// Open the database and run `f` with the database handle, returning any error
-/// as a displayable string.
-///
-/// # Parameters
-/// - `f`: Closure receiving a `&Database`.
-///
-/// # Returns
-/// `Ok(T)` on success, `Err(String)` with the error message on failure.
-fn with_db<F, T>(f: F) -> Result<T, String>
-where
-    F: FnOnce(&mantle_core::data::Database) -> Result<T, mantle_core::Error>,
-{
-    use mantle_core::{config::default_db_path, data::Database};
-    let db = Database::open(&default_db_path()).map_err(|e| e.to_string())?;
-    f(&db).map_err(|e| e.to_string())
-}
 
 // ─── Toolbar ─────────────────────────────────────────────────────────────────
 
@@ -246,8 +230,8 @@ fn empty_state() -> adw::StatusPage {
 /// Wraps the profile list in a [`ScrolledWindow`].
 ///
 /// # Parameters
-/// - `active_label`: Current active profile name for ProfileChanged events.
-/// - `event_bus`: Shared event bus forwarded to profile_list.
+/// - `active_label`: Current active profile name for `ProfileChanged` events.
+/// - `event_bus`: Shared event bus forwarded to `profile_list`.
 fn profile_scroll(
     state: &AppState,
     window: &adw::ApplicationWindow,
@@ -270,7 +254,7 @@ fn profile_scroll(
         .margin_end(12)
         .build();
 
-    content.append(&profile_list(state, window, refresh, &active_label, event_bus));
+    content.append(&profile_list(state, window, refresh, active_label, event_bus));
 
     scroll.set_child(Some(&content));
     scroll
@@ -315,8 +299,8 @@ fn profile_list(
 /// ```
 ///
 /// # Parameters
-/// - `active_label`: Current active profile name (for ProfileChanged event).
-/// - `event_bus`: Shared event bus — activate button publishes ProfileChanged.
+/// - `active_label`: Current active profile name (for `ProfileChanged` event).
+/// - `event_bus`: Shared event bus — activate button publishes `ProfileChanged`.
 fn profile_row(
     entry: &ProfileEntry,
     window: &adw::ApplicationWindow,

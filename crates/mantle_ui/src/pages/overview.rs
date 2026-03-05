@@ -24,8 +24,9 @@ use adw::prelude::*;
 use gtk4::{glib, Align, Box as GtkBox, Label, Orientation, ScrolledWindow, Switch};
 use libadwaita as adw;
 
-use mantle_core::{config::default_db_path, data::Database, Error as CoreError};
+use mantle_core;
 
+use crate::pages::shared::with_db;
 use crate::state::{AppState, ModEntry, ProfileEntry};
 
 // ─── Public entry point ───────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ pub fn build(
     state: &AppState,
     navigate_to_mods: Rc<dyn Fn()>,
     refresh: &Rc<dyn Fn()>,
+    on_launch: &Rc<dyn Fn()>,
 ) -> gtk4::ScrolledWindow {
     let scroll = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -75,7 +77,7 @@ pub fn build(
         .margin_end(16)
         .build();
 
-    content.append(&hero_card(state));
+    content.append(&hero_card(state, on_launch));
     content.append(&stat_tiles(state));
     content.append(&profile_section(state, refresh));
 
@@ -94,8 +96,13 @@ pub fn build(
 
 /// Top banner: game name, version · Steam · backend subtitle, and launch button.
 ///
-/// Stats are intentionally absent here — they live in the stat tiles below.
-fn hero_card(state: &AppState) -> GtkBox {
+/// The launch button is wired to `on_launch` so both the hero card and the
+/// header bar button trigger identical VFS mount + `xdg-open` logic.
+///
+/// # Parameters
+/// - `state`: Current application state snapshot.
+/// - `on_launch`: Shared launch handler from `build_ui`.
+fn hero_card(state: &AppState, on_launch: &Rc<dyn Fn()>) -> GtkBox {
     let card = GtkBox::new(Orientation::Vertical, 0);
     card.add_css_class("card");
 
@@ -152,6 +159,8 @@ fn hero_card(state: &AppState) -> GtkBox {
     launch_btn.set_valign(Align::Center);
     launch_btn.set_sensitive(state.steam_app_id.is_some());
     launch_btn.set_tooltip_text(Some("Launch via Steam"));
+    let on_launch = Rc::clone(on_launch);
+    launch_btn.connect_clicked(move |_| on_launch());
     inner.append(&launch_btn);
 
     card.append(&inner);
@@ -444,15 +453,4 @@ fn mod_action_row(entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> adw::ActionRow {
     });
 
     row
-}
-
-// ─── DB helper ────────────────────────────────────────────────────────────────
-
-/// Open the database and run `f`, mapping errors to [`CoreError`].
-fn with_db<T, F>(f: F) -> Result<T, CoreError>
-where
-    F: FnOnce(&Database) -> Result<T, CoreError>,
-{
-    let db = Database::open(&default_db_path())?;
-    f(&db)
 }

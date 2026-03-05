@@ -3,3 +3,4 @@ pub mod mods;
 pub mod overview;
 pub mod plugins;
 pub mod profiles;
+pub(crate) mod shared;

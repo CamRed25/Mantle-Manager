@@ -35,7 +35,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use adw::prelude::*;
-use gtk4::glib;
+use gtk4::{glib, Box as GtkBox};
 use libadwaita as adw;
 
 use mantle_core::{
@@ -118,9 +118,8 @@ pub fn build_ui(app: &adw::Application) {
     // can access it at click time without re-reading the DB.
     let game_data_path_shared: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(None));
 
-    // Shared game kind — updated alongside app_id; drives SKSE button sensitivity.
-    // Only needed when the `net` feature is enabled.
-    #[cfg(feature = "net")]
+    // Shared game kind — updated alongside app_id.  Available unconditionally
+    // for game-specific UI decisions; SKSE sensitivity check stays gated on `net`.
     let game_kind_shared: Rc<Cell<Option<mantle_core::game::GameKind>>> =
         Rc::new(Cell::new(None));
 
@@ -194,9 +193,22 @@ pub fn build_ui(app: &adw::Application) {
     // ToastOverlay created here so it can be passed to page builders that
     // need to show feedback (e.g. the mods page "Add Mod" button).
     let toast_overlay = adw::ToastOverlay::new();
-    let (stack, aside) =
-        build_main_content(&placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc, &event_bus);
+    // ── Shared launch handler ─────────────────────────────────────────────
+    // Built once from the three shared Rc cells so both the header bar button
+    // and the overview hero card button fire identical VFS + xdg-open logic.
+    let on_launch: Rc<dyn Fn()> = Rc::new(make_launch_handler(
+        Rc::clone(&app_id_shared),
+        Rc::clone(&game_data_path_shared),
+        Rc::clone(&mount_handle_shared),
+    ));
+
+    let (stack, init_sidebar_nav, page_handles) = build_main_content(
+        &placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc, &event_bus, &on_launch,
+    );
     switcher.set_stack(Some(&stack));
+
+    // Store page handles so the idle loop can do in-place updates.
+    let page_handles_rc = Rc::new(RefCell::new(page_handles));
 
     // NavigationSplitView: sidebar = summary panel (left), content = ViewStack (right).
     // Auto-collapses to single-panel navigation on narrow displays,
@@ -206,9 +218,8 @@ pub fn build_ui(app: &adw::Application) {
     split_view.set_max_sidebar_width(360.0);
     split_view.set_sidebar_width_fraction(0.25);
 
-    let sidebar_nav = adw::NavigationPage::builder().title("Summary").child(&aside).build();
     let content_nav = adw::NavigationPage::builder().title("Mantle Manager").child(&stack).build();
-    split_view.set_sidebar(Some(&sidebar_nav));
+    split_view.set_sidebar(Some(&init_sidebar_nav));
     split_view.set_content(Some(&content_nav));
 
     // ToastOverlay wraps the split view so toasts render above all content.
@@ -258,39 +269,29 @@ pub fn build_ui(app: &adw::Application) {
     // Remains registered (`ControlFlow::Continue`) for the lifetime of the
     // window so it picks up both the initial startup load and any subsequent
     // user-triggered reloads queued via `refresh_fn()`.
-    let split_view_c = split_view.clone();
-    let switcher_c = switcher.clone();
-    let launch_btn_c = launch_btn.clone();
-    let app_id_c = Rc::clone(&app_id_shared);
+    let ctx = WindowContext {
+        launch_btn: launch_btn.clone(),
+        app_id: Rc::clone(&app_id_shared),
+        window: window.clone(),
+        refresh: Rc::clone(&refresh_fn),
+        toast_overlay: toast_overlay.clone(),
+        queue: Rc::clone(&queue_rc),
+        event_bus: Arc::clone(&event_bus),
+        on_launch: Rc::clone(&on_launch),
+    };
     let game_data_path_c = Rc::clone(&game_data_path_shared);
-    let window_c = window.clone();
-    let refresh_fn_c = Rc::clone(&refresh_fn);
-    let toast_overlay_c = toast_overlay.clone();
-    let queue_idle = Rc::clone(&queue_rc);
-    let event_bus_idle = Arc::clone(&event_bus);
+    let game_kind_c = Rc::clone(&game_kind_shared);
+    let handles_idle = Rc::clone(&page_handles_rc);
     #[cfg(feature = "net")]
     let skse_btn_c = skse_btn.clone();
-    #[cfg(feature = "net")]
-    let game_kind_c = Rc::clone(&game_kind_shared);
     glib::idle_add_local(move || {
         use std::sync::mpsc::TryRecvError;
         match receiver.try_recv() {
             Ok(state) => {
-                // Propagate game data path to the launch button’s shared cell.
+                // Propagate game data path to the launch button's shared cell.
                 (*game_data_path_c.borrow_mut()).clone_from(&state.game_data_path);
-                apply_state_update(
-                    &state,
-                    (&split_view_c, &switcher_c),
-                    &launch_btn_c,
-                    &app_id_c,
-                    &window_c,
-                    &refresh_fn_c,
-                    &toast_overlay_c,
-                    &queue_idle,
-                    &event_bus_idle,
-                );
-                // Update SKSE button sensitivity whenever live state arrives.
-                #[cfg(feature = "net")]
+                apply_state_update(&state, &handles_idle.borrow(), &ctx);
+                // Update game kind (always); SKSE sensitivity only with `net`.
                 {
                     use mantle_core::game::games::KNOWN_GAMES;
                     let kind = state
@@ -298,9 +299,12 @@ pub fn build_ui(app: &adw::Application) {
                         .and_then(|id| KNOWN_GAMES.iter().find(|g| g.steam_app_id == id))
                         .map(|g| g.kind);
                     game_kind_c.set(kind);
-                    let supported =
-                        kind.is_some_and(|k| mantle_core::skse::config_for_game(k).is_some());
-                    skse_btn_c.set_sensitive(supported);
+                    #[cfg(feature = "net")]
+                    {
+                        let supported =
+                            kind.is_some_and(|k| mantle_core::skse::config_for_game(k).is_some());
+                        skse_btn_c.set_sensitive(supported);
+                    }
                 }
                 glib::ControlFlow::Continue
             }
@@ -332,69 +336,126 @@ pub fn build_ui(app: &adw::Application) {
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
-/// Apply a freshly loaded [`AppState`] to the live UI.
+/// Apply a freshly loaded [`AppState`] snapshot to the live UI.
 ///
-/// Rebuilds the page stack and sidebar, then updates the launch button state.
-/// Called from the idle loop whenever a new state snapshot is delivered.
+/// Updates every page and the header launch button using stable widget
+/// handles (no `ViewStack` rebuild).  Called from the idle loop on each
+/// state delivery.
 ///
 /// # Parameters
-/// - `state`: New application state snapshot.
-/// - `nav`: `(split_view, switcher)` — navigation split view and view switcher to update.
-/// - `launch_btn`: Launch button to update label/sensitivity on.
-/// - `app_id`: Shared cell updated with the new `steam_app_id`.
-/// - `window`: Application window passed through to page builders.
-/// - `refresh`: Refresh callback passed through to page builders.
-/// - `toast_overlay`: Toast overlay passed through to page builders.
-/// - `queue`: Shared download queue forwarded to the downloads page.
-/// - `event_bus`: Shared event bus forwarded to mods / profiles page builders.
-#[allow(clippy::too_many_arguments)]
-fn apply_state_update(
-    state: &AppState,
-    nav: (&adw::NavigationSplitView, &adw::ViewSwitcher),
-    launch_btn: &gtk4::Button,
-    app_id: &Rc<Cell<Option<u32>>>,
-    window: &adw::ApplicationWindow,
-    refresh: &Rc<dyn Fn()>,
-    toast_overlay: &adw::ToastOverlay,
-    queue: &Rc<RefCell<DownloadQueue>>,
-    event_bus: &Arc<EventBus>,
-) {
-    let (split_view, switcher) = nav;
-    let (new_stack, new_aside) =
-        build_main_content(state, window, refresh, toast_overlay, queue, event_bus);
-    switcher.set_stack(Some(&new_stack));
+/// - `state`: The new application state to render.
+/// - `handles`: Stable per-page widget handles created once at startup.
+/// - `ctx`: Window-level context (launch button, queues, callbacks, etc.).
+fn apply_state_update(state: &AppState, handles: &PageHandles, ctx: &WindowContext) {
+    // Mods: in-place update (search text preserved across refreshes).
+    mods::update(&handles.mods_handle, state, &ctx.refresh, &ctx.event_bus);
 
-    let new_sidebar = adw::NavigationPage::builder().title("Summary").child(&new_aside).build();
-    let new_content =
-        adw::NavigationPage::builder().title("Mantle Manager").child(&new_stack).build();
-    split_view.set_sidebar(Some(&new_sidebar));
-    split_view.set_content(Some(&new_content));
+    // Overview: swap child (no persistent input state).
+    swap_wrap_child(
+        &handles.overview_wrap,
+        &overview::build(
+            state,
+            Rc::clone(&handles.navigate_to_mods),
+            &ctx.refresh,
+            &ctx.on_launch,
+        ),
+    );
 
-    app_id.set(state.steam_app_id);
-    launch_btn.set_label(&launch_button_label(state));
-    launch_btn.set_tooltip_text(Some(&format!("Launch {}", state.launch_target)));
-    launch_btn.set_sensitive(state.steam_app_id.is_some());
+    // Plugins: swap child.
+    swap_wrap_child(&handles.plugins_wrap, &plugins::build(state, &ctx.window, &ctx.refresh));
+
+    // Downloads: swap child.
+    swap_wrap_child(
+        &handles.downloads_wrap,
+        &downloads::build(&ctx.queue.borrow().snapshot(), &ctx.queue, &ctx.refresh),
+    );
+
+    // Profiles: swap child.
+    swap_wrap_child(
+        &handles.profiles_wrap,
+        &profiles::build(state, &ctx.window, &ctx.refresh, &ctx.event_bus),
+    );
+
+    // Sidebar: replace nav page child.
+    handles.sidebar_nav.set_child(Some(&sidebar::build(state)));
+
+    // Header bar launch button.
+    ctx.app_id.set(state.steam_app_id);
+    ctx.launch_btn.set_label(&launch_button_label(state));
+    ctx.launch_btn
+        .set_tooltip_text(Some(&format!("Launch {}", state.launch_target)));
+    ctx.launch_btn.set_sensitive(state.steam_app_id.is_some());
 }
 
-/// Build the `adw::ViewStack` (five tabs) and the sidebar for `state`.
+/// Immutable window-level context forwarded to [`apply_state_update`].
 ///
-/// Called at startup with the placeholder and again when the live
-/// [`AppState`] arrives from the background loader, and after every
-/// user-triggered state refresh.
+/// Bundles the eight parameters that would otherwise be threaded
+/// individually through every update call.  All fields are inexpensive
+/// GTK/`Rc`/`Arc` ref-count clones; cloning the struct is O(1).
+#[derive(Clone)]
+struct WindowContext {
+    /// Header-bar launch button — label and sensitivity updated each cycle.
+    launch_btn: gtk4::Button,
+    /// Shared Steam app-id cell — written by the idle loop on each delivery.
+    app_id: Rc<Cell<Option<u32>>>,
+    /// Main application window forwarded to page builders that open dialogs.
+    window: adw::ApplicationWindow,
+    /// Callback to re-queue a state reload after any DB mutation.
+    refresh: Rc<dyn Fn()>,
+    /// Toast overlay for non-blocking user notifications.
+    #[allow(dead_code)] // reserved for future toast calls
+    toast_overlay: adw::ToastOverlay,
+    /// Shared download queue forwarded to the Downloads page builder.
+    queue: Rc<RefCell<DownloadQueue>>,
+    /// Shared event bus forwarded to Mods and Profiles builders.
+    event_bus: Arc<EventBus>,
+    /// Shared launch handler forwarded to the Overview hero button.
+    on_launch: Rc<dyn Fn()>,
+}
+
+/// Stable widget handles for per-page in-place updates.
+///
+/// Created once by [`build_main_content`] and stored in `build_ui`.
+/// The outer widget hierarchy (`ViewStack`, `NavigationSplitView`) is never
+/// rebuilt; only the data-bearing inner widgets are updated on each state
+/// delivery.
+struct PageHandles {
+    /// Container for the Overview page child — swapped on each update.
+    overview_wrap: GtkBox,
+    /// In-place update handle for the Mods page (preserves `SearchEntry` state).
+    mods_handle: mods::ModsHandle,
+    /// Container for the Plugins page child — swapped on each update.
+    plugins_wrap: GtkBox,
+    /// Container for the Downloads page child — swapped on each update.
+    downloads_wrap: GtkBox,
+    /// Container for the Profiles page child — swapped on each update.
+    profiles_wrap: GtkBox,
+    /// Closure to navigate the `ViewStack` to the "mods" tab.
+    navigate_to_mods: Rc<dyn Fn()>,
+    /// Stable sidebar `NavigationPage` — its child is replaced on each update.
+    sidebar_nav: adw::NavigationPage,
+}
+
+/// Build the stable [`adw::ViewStack`] with all five page wrappers and the
+/// sidebar [`adw::NavigationPage`].
+///
+/// Called **once** from `build_ui`. The returned [`PageHandles`] is used for
+/// all subsequent in-place updates; the `ViewStack` and navigation hierarchy are
+/// never torn down or rebuilt.
 ///
 /// # Parameters
-/// - `state`: Snapshot used to populate every page.
-/// - `window`: Main application window, passed to page builders that
-///   need to set `transient_for` on dialogs.
-/// - `refresh`: Callback to re-queue a state reload. Call after any
-///   DB-mutating user action so the UI reflects the new state.
-/// - `queue`: Shared download queue forwarded to the downloads page so
-///   its action buttons can mutate queue state directly.
-/// - `event_bus`: Shared event bus forwarded to mods and profiles page
-///   builders so they can publish events on user actions.
+/// - `state`: Snapshot used to populate every page at startup.
+/// - `window`: Main application window, passed to page builders.
+/// - `refresh`: Callback to re-queue a state reload after any DB mutation.
+/// - `toast_overlay`: Toast overlay forwarded to page builders.
+/// - `queue`: Shared download queue forwarded to the Downloads page.
+/// - `event_bus`: Shared event bus forwarded to Mods and Profiles pages.
+/// - `on_launch`: Shared launch handler forwarded to the Overview hero button.
 ///
 /// # Returns
-/// `(stack, aside)` — the five-tab view stack and the scrollable sidebar.
+/// `(stack, sidebar_nav, handles)` where `stack` is placed in the
+/// `NavigationSplitView` and `sidebar_nav` is its sidebar; `handles` stores
+/// stable widget refs for subsequent [`apply_state_update`] calls.
 fn build_main_content(
     state: &AppState,
     window: &adw::ApplicationWindow,
@@ -402,12 +463,10 @@ fn build_main_content(
     toast_overlay: &adw::ToastOverlay,
     queue: &Rc<RefCell<DownloadQueue>>,
     event_bus: &Arc<EventBus>,
-) -> (adw::ViewStack, gtk4::ScrolledWindow) {
+    on_launch: &Rc<dyn Fn()>,
+) -> (adw::ViewStack, adw::NavigationPage, PageHandles) {
     let stack = adw::ViewStack::new();
 
-    // Create the navigate_to_mods closure before building the overview page so
-    // it can capture a weak reference to the stack.  Using a weak reference
-    // avoids a reference cycle (stack → overview widget → closure → stack).
     let navigate_to_mods: Rc<dyn Fn()> = {
         let stack_weak = stack.downgrade();
         Rc::new(move || {
@@ -417,39 +476,61 @@ fn build_main_content(
         })
     };
 
-    let ov_page = stack.add_titled(
-        &overview::build(state, Rc::clone(&navigate_to_mods), refresh),
-        Some("overview"),
-        "Overview",
-    );
+    // Overview — stable wrapper, child swapped on update.
+    let overview_wrap = GtkBox::builder().orientation(gtk4::Orientation::Vertical).build();
+    overview_wrap.append(&overview::build(state, Rc::clone(&navigate_to_mods), refresh, on_launch));
+    let ov_page = stack.add_titled(&overview_wrap, Some("overview"), "Overview");
     ov_page.set_icon_name(Some("go-home-symbolic"));
 
-    let mods_page =
-        stack.add_titled(&mods::build(state, window, refresh, toast_overlay, event_bus), Some("mods"), "Mods");
+    // Mods — in-place update via ModsHandle (search text persists).
+    let (mods_root, mods_handle) = mods::build(state, window, refresh, toast_overlay, event_bus);
+    let mods_page = stack.add_titled(&mods_root, Some("mods"), "Mods");
     mods_page.set_icon_name(Some("application-x-addon-symbolic"));
 
-    let plugins_page =
-        stack.add_titled(&plugins::build(state, window, refresh), Some("plugins"), "Plugins");
+    // Plugins — stable wrapper, child swapped on update.
+    let plugins_wrap = GtkBox::builder().orientation(gtk4::Orientation::Vertical).build();
+    plugins_wrap.append(&plugins::build(state, window, refresh));
+    let plugins_page = stack.add_titled(&plugins_wrap, Some("plugins"), "Plugins");
     plugins_page.set_icon_name(Some("application-x-executable-symbolic"));
 
-    let downloads_page = stack.add_titled(
-        &downloads::build(
-            &queue.borrow().snapshot(),
-            queue,
-            refresh,
-        ),
-        Some("downloads"),
-        "Downloads",
-    );
+    // Downloads — stable wrapper, child swapped on update.
+    let downloads_wrap = GtkBox::builder().orientation(gtk4::Orientation::Vertical).build();
+    downloads_wrap.append(&downloads::build(&queue.borrow().snapshot(), queue, refresh));
+    let downloads_page = stack.add_titled(&downloads_wrap, Some("downloads"), "Downloads");
     downloads_page.set_icon_name(Some("folder-download-symbolic"));
 
-    let profiles_page =
-        stack.add_titled(&profiles::build(state, window, refresh, event_bus), Some("profiles"), "Profiles");
+    // Profiles — stable wrapper, child swapped on update.
+    let profiles_wrap = GtkBox::builder().orientation(gtk4::Orientation::Vertical).build();
+    profiles_wrap.append(&profiles::build(state, window, refresh, event_bus));
+    let profiles_page = stack.add_titled(&profiles_wrap, Some("profiles"), "Profiles");
     profiles_page.set_icon_name(Some("avatar-default-symbolic"));
 
+    // Sidebar — stable NavigationPage, child replaced on update.
     let aside = sidebar::build(state);
+    let sidebar_nav = adw::NavigationPage::builder().title("Summary").child(&aside).build();
 
-    (stack, aside)
+    let handles = PageHandles {
+        overview_wrap,
+        mods_handle,
+        plugins_wrap,
+        downloads_wrap,
+        profiles_wrap,
+        navigate_to_mods,
+        sidebar_nav: sidebar_nav.clone(),
+    };
+
+    (stack, sidebar_nav, handles)
+}
+
+/// Replace the only child of a stable wrapper [`GtkBox`].
+///
+/// Used by [`apply_state_update`] to swap page content without touching the
+/// wrapper widget or its position in the [`adw::ViewStack`].
+fn swap_wrap_child(wrapper: &GtkBox, new_child: &impl gtk4::prelude::IsA<gtk4::Widget>) {
+    while let Some(child) = wrapper.first_child() {
+        wrapper.remove(&child);
+    }
+    wrapper.append(new_child);
 }
 
 /// Returns the formatted launch button label for a given `state`.
@@ -464,31 +545,24 @@ fn launch_button_label(state: &AppState) -> String {
     }
 }
 
-/// Wire the launch button to mount enabled mods via the VFS layer and then
-/// open `steam://run/<app_id>` via `xdg-open`.
+/// Build a launch handler closure from the three shared Rc refs.
 ///
-/// On each click the previous `MountHandle` is released (unmounted) before a
-/// new one is created, so re-clicking after changing the active mod list
-/// re-mounts cleanly.  If the VFS mount fails the game is launched anyway so
-/// the user is never stuck — only the overlay is absent.
+/// Returns a `'static` `Fn()` that unmounts any previous VFS overlay, builds
+/// fresh [`MountParams`], mounts, then opens `steam://run/<app_id>` via
+/// `xdg-open`.  Shared between the header bar button ([`wire_launch_button`])
+/// and the overview hero card button (passed as `on_launch` through the
+/// widget hierarchy).
 ///
 /// # Parameters
-/// - `btn`: The launch [`gtk4::Button`] to wire.
 /// - `app_id`: Shared cell containing the detected Steam App ID.
-/// - `game_data_path`: Shared cell containing the game's Data directory path;
-///   used as the VFS `merge_dir`.
-/// - `mount_handle`: Shared cell that persists the live [`mantle_core::vfs::MountHandle`]
-///   between clicks.  `None` when no mods are enabled or before first launch.
-fn wire_launch_button(
-    btn: &gtk4::Button,
-    app_id: &Rc<Cell<Option<u32>>>,
-    game_data_path: &Rc<RefCell<Option<PathBuf>>>,
-    mount_handle: &Rc<RefCell<Option<mantle_core::vfs::MountHandle>>>,
-) {
-    let app_id = Rc::clone(app_id);
-    let game_data_path = Rc::clone(game_data_path);
-    let mount_handle = Rc::clone(mount_handle);
-    btn.connect_clicked(move |_| {
+/// - `game_data_path`: Shared cell containing the game's Data directory path.
+/// - `mount_handle`: Shared cell persisting the live VFS mount between clicks.
+fn make_launch_handler(
+    app_id: Rc<Cell<Option<u32>>>,
+    game_data_path: Rc<RefCell<Option<PathBuf>>>,
+    mount_handle: Rc<RefCell<Option<mantle_core::vfs::MountHandle>>>,
+) -> impl Fn() + 'static {
+    move || {
         let Some(id) = app_id.get() else {
             tracing::warn!("launch_btn clicked but no steam_app_id is set");
             return;
@@ -540,7 +614,31 @@ fn wire_launch_button(
         if let Err(e) = std::process::Command::new("xdg-open").arg(&url).spawn() {
             tracing::error!("failed to open Steam launch URL '{url}': {e}");
         }
-    });
+    }
+}
+
+/// Wire the header-bar launch button.
+///
+/// Delegates to [`make_launch_handler`] so the overview hero card and the
+/// header bar button share identical VFS + launch logic.
+///
+/// # Parameters
+/// - `btn`: The launch [`gtk4::Button`] to wire.
+/// - `app_id`: Shared cell containing the detected Steam App ID.
+/// - `game_data_path`: Shared cell containing the game's Data directory path.
+/// - `mount_handle`: Shared cell that persists the live VFS mount handle.
+fn wire_launch_button(
+    btn: &gtk4::Button,
+    app_id: &Rc<Cell<Option<u32>>>,
+    game_data_path: &Rc<RefCell<Option<PathBuf>>>,
+    mount_handle: &Rc<RefCell<Option<mantle_core::vfs::MountHandle>>>,
+) {
+    let handler = make_launch_handler(
+        Rc::clone(app_id),
+        Rc::clone(game_data_path),
+        Rc::clone(mount_handle),
+    );
+    btn.connect_clicked(move |_| handler());
 }
 
 /// Build a [`mantle_core::vfs::MountParams`] from the active profile's
@@ -945,6 +1043,21 @@ fn install_mod_archive(archive_path: std::path::PathBuf, toast_overlay: adw::Toa
 
 // ── SKSE installer (net feature) ─────────────────────────────────────────────
 
+/// Typed messages sent from the SKSE installer background thread to the idle
+/// poll loop.
+///
+/// Using an enum instead of `Result<String, String>` eliminates the fragile
+/// `msg.starts_with("Script extender")` sentinel check.
+#[cfg(feature = "net")]
+enum SkseMsg {
+    /// Intermediate progress update — update the pending toast label.
+    Progress(String),
+    /// Installation completed successfully — show final toast and re-enable button.
+    Done(String),
+    /// Installation failed — show error toast and re-enable button.
+    Err(String),
+}
+
 #[cfg(feature = "net")]
 fn wire_skse_button(
     btn: &gtk4::Button,
@@ -984,7 +1097,7 @@ fn run_skse_install(
     use mantle_core::skse::{install_skse, SkseInstallConfig, SkseProgress};
     use std::sync::mpsc;
 
-    let (tx, rx) = mpsc::channel::<Result<String, String>>();
+    let (tx, rx) = mpsc::channel::<SkseMsg>();
 
     // Progress toast that stays until we dismiss it.
     let pending_toast = adw::Toast::builder()
@@ -1028,25 +1141,25 @@ fn run_skse_install(
                     SkseProgress::Done => "Done".to_string(),
                     _ => return,
                 };
-                let _ = tx.send(Ok(msg));
+                let _ = tx.send(SkseMsg::Progress(msg));
             }
         }));
 
         match result {
             Ok(res) if res.was_up_to_date => {
-                let _ = tx.send(Ok(format!(
+                let _ = tx.send(SkseMsg::Done(format!(
                     "Script extender {} is already up to date",
                     res.version_installed
                 )));
             }
             Ok(res) => {
-                let _ = tx.send(Ok(format!(
+                let _ = tx.send(SkseMsg::Done(format!(
                     "Script extender {} installed successfully",
                     res.version_installed
                 )));
             }
             Err(e) => {
-                let _ = tx.send(Err(format!("{e}")));
+                let _ = tx.send(SkseMsg::Err(format!("{e}")));
             }
         }
     });
@@ -1054,24 +1167,15 @@ fn run_skse_install(
     glib::idle_add_local(move || {
         use std::sync::mpsc::TryRecvError;
         match rx.try_recv() {
-            Ok(Ok(msg)) => {
-                // Progress messages come as Ok(Ok(..)); the final result starts with "Script extender".
-                if msg.starts_with("Script extender") {
-                    pending_toast.dismiss();
-                    toast_overlay.add_toast(
-                        adw::Toast::builder()
-                            .title(msg)
-                            .timeout(4)
-                            .build(),
-                    );
-                    on_done();
-                    glib::ControlFlow::Break
-                } else {
-                    pending_toast.set_title(&msg);
-                    glib::ControlFlow::Continue
-                }
+            Ok(SkseMsg::Done(msg)) => {
+                pending_toast.dismiss();
+                toast_overlay.add_toast(
+                    adw::Toast::builder().title(msg).timeout(4).build(),
+                );
+                on_done();
+                glib::ControlFlow::Break
             }
-            Ok(Err(msg)) => {
+            Ok(SkseMsg::Err(msg)) => {
                 pending_toast.dismiss();
                 toast_overlay.add_toast(
                     adw::Toast::builder()
@@ -1081,6 +1185,10 @@ fn run_skse_install(
                 );
                 on_done();
                 glib::ControlFlow::Break
+            }
+            Ok(SkseMsg::Progress(msg)) => {
+                pending_toast.set_title(&msg);
+                glib::ControlFlow::Continue
             }
             Err(TryRecvError::Empty) => glib::ControlFlow::Continue,
             Err(TryRecvError::Disconnected) => {

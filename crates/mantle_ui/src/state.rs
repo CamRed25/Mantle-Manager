@@ -58,7 +58,9 @@ pub struct ProfileEntry {
 /// background tasks report updates.
 #[derive(Clone)]
 pub enum DownloadStatus {
-    /// Waiting in the queue — not yet started.
+    /// Waiting in the queue — not yet started.  Reserved for Tier 3/g HTTP
+    /// download implementation; the queue stub currently skips this state.
+    #[allow(dead_code)]
     Queued,
     /// Download is running.
     ///
@@ -148,201 +150,31 @@ pub struct PluginEntry {
 }
 
 impl AppState {
-    /// Placeholder data matching the UI concept mockup.
-    /// Replace with real data from `mantle_core` once the backend is wired up.
-    // clippy::too_many_lines: this is a temporary fixture that initialises an
-    // entire AppState inline; it will be removed when state_worker replaces it.
-    #[allow(clippy::too_many_lines)]
+    /// Minimal placeholder shown for the brief window between startup and the
+    /// first live [`AppState`] delivery from `state_worker`.
+    ///
+    /// All fields are empty / `None` / zero — no fake data is shown.  The
+    /// Overview page renders its "Welcome" status page (profiles empty),
+    /// the launch button starts disabled (`steam_app_id` None), and all lists
+    /// are empty.  This prevents any misleading info flashing before the real
+    /// data arrives.
     pub fn placeholder() -> Self {
         Self {
-            // Skyrim SE App ID used as placeholder; real detection happens via
-            // game::detect_all_steam() in state_worker.
-            steam_app_id: Some(489_830),
-            game_name: "Skyrim Special Edition".to_string(),
-            game_version: "v1.6.1170".to_string(),
-            launch_target: "SKSE64".to_string(),
-            active_profile: "Survival Playthrough".to_string(),
-            mod_count: 147,
-            plugin_count: 89,
-            conflict_count: 12,
-            overlay_backend: "kernel 6.11".to_string(),
-            mods: vec![
-                ModEntry { mod_id: 0, profile_id: 0, name: "SKSE64".to_string(), enabled: true, version: Some("v2.2.6".to_string()), has_conflict: false },
-                ModEntry { mod_id: 0, profile_id: 0, name: "Address Library for SKSE".to_string(), enabled: true, version: Some("v11".to_string()), has_conflict: false },
-                ModEntry { mod_id: 0, profile_id: 0, name: "SkyUI".to_string(), enabled: true, version: Some("v5.2".to_string()), has_conflict: false },
-                ModEntry { mod_id: 0, profile_id: 0, name: "Static Mesh Improvement Mod".to_string(), enabled: true, version: None, has_conflict: true },
-                ModEntry { mod_id: 0, profile_id: 0, name: "Noble Skyrim HD-2K".to_string(), enabled: true, version: None, has_conflict: true },
-            ],
-            profiles: vec![
-                ProfileEntry {
-                    id: "survival-playthrough".to_string(),
-                    name: "Survival Playthrough".to_string(),
-                    mod_count: 147,
-                    active: true,
-                },
-                ProfileEntry {
-                    id: "vanilla-plus".to_string(),
-                    name: "Vanilla+".to_string(),
-                    mod_count: 23,
-                    active: false,
-                },
-                ProfileEntry {
-                    id: "testing".to_string(),
-                    name: "Testing".to_string(),
-                    mod_count: 5,
-                    active: false,
-                },
-            ],
-            downloads: vec![
-                DownloadEntry {
-                    id: "dl-1".to_string(),
-                    name: "Requiem 5.4.0".to_string(),
-                    state: DownloadStatus::InProgress {
-                        progress: 0.67,
-                        bytes_done: 67_108_864,
-                        total_bytes: Some(100_000_000),
-                    },
-                },
-                DownloadEntry {
-                    id: "dl-2".to_string(),
-                    name: "SkyUI 5.2SE".to_string(),
-                    state: DownloadStatus::Complete { bytes: 5_242_880 },
-                },
-                DownloadEntry {
-                    id: "dl-3".to_string(),
-                    name: "WICO — Windsong".to_string(),
-                    state: DownloadStatus::Queued,
-                },
-                DownloadEntry {
-                    id: "dl-4".to_string(),
-                    name: "Immersive Armors SE".to_string(),
-                    state: DownloadStatus::Failed("Connection timeout".to_string()),
-                },
-            ],
-            themes: vec![
-                // ── Built-in themes ─────────────────────────────────────────
-                ThemeEntry {
-                    id: "catppuccin-mocha".to_string(),
-                    name: "Catppuccin Mocha".to_string(),
-                    author: "Catppuccin".to_string(),
-                    description: "Soothing pastel theme — dark variant.".to_string(),
-                    color_scheme: "dark".to_string(),
-                    css: String::new(), // applied via built-in Theme variant
-                    active: false,
-                    builtin: true,
-                },
-                ThemeEntry {
-                    id: "catppuccin-latte".to_string(),
-                    name: "Catppuccin Latte".to_string(),
-                    author: "Catppuccin".to_string(),
-                    description: "Soothing pastel theme — light variant.".to_string(),
-                    color_scheme: "light".to_string(),
-                    css: String::new(),
-                    active: false,
-                    builtin: true,
-                },
-                ThemeEntry {
-                    id: "nord".to_string(),
-                    name: "Nord".to_string(),
-                    author: "Arctic Ice Studio".to_string(),
-                    description: "An arctic, north-bluish colour palette.".to_string(),
-                    color_scheme: "dark".to_string(),
-                    css: String::new(),
-                    active: false,
-                    builtin: true,
-                },
-                ThemeEntry {
-                    id: "skyrim".to_string(),
-                    name: "Skyrim".to_string(),
-                    author: "Mantle Team".to_string(),
-                    description: "Nordic dark theme inspired by The Elder Scrolls V.".to_string(),
-                    color_scheme: "dark".to_string(),
-                    css: String::new(),
-                    active: false,
-                    builtin: true,
-                },
-                ThemeEntry {
-                    id: "fallout".to_string(),
-                    name: "Fallout".to_string(),
-                    author: "Mantle Team".to_string(),
-                    description: "Retro terminal green-on-black inspired by Fallout.".to_string(),
-                    color_scheme: "dark".to_string(),
-                    css: String::new(),
-                    active: false,
-                    builtin: true,
-                },
-                // ── Example user-installed themes ───────────────────────────
-                ThemeEntry {
-                    id: "gruvbox-dark".to_string(),
-                    name: "Gruvbox Dark".to_string(),
-                    author: "Community".to_string(),
-                    description: "Warm retro-groove colour scheme with earthy tones.".to_string(),
-                    color_scheme: "dark".to_string(),
-                    css: "@define-color accent_color #d79921;".to_string(),
-                    active: false,
-                    builtin: false,
-                },
-                ThemeEntry {
-                    id: "solarized-light".to_string(),
-                    name: "Solarized Light".to_string(),
-                    author: "Ethan Schoonover".to_string(),
-                    description: "Precision colours for machines and people.".to_string(),
-                    color_scheme: "light".to_string(),
-                    css: "@define-color accent_color #268bd2;".to_string(),
-                    active: false,
-                    builtin: false,
-                },
-            ],
+            steam_app_id: None,
+            game_name: String::new(),
+            game_version: String::new(),
+            launch_target: String::new(),
+            active_profile: String::new(),
+            mod_count: 0,
+            plugin_count: 0,
+            conflict_count: 0,
+            overlay_backend: String::new(),
+            mods: vec![],
+            profiles: vec![],
+            downloads: vec![],
+            themes: vec![],
             game_data_path: None,
-            plugins: vec![
-                PluginEntry {
-                    id: "skse-installer".to_string(),
-                    name: "SKSE Installer".to_string(),
-                    version: "1.2.0".to_string(),
-                    author: "MO2 Linux".to_string(),
-                    description: "Automatically copies SKSE64 binaries into the game directory before launch.".to_string(),
-                    enabled: true,
-                    settings: vec![
-                        PluginSettingEntry {
-                            key: "auto_update".to_string(),
-                            label: "Auto-update SKSE".to_string(),
-                            description: Some("Re-copy SKSE binaries on every launch.".to_string()),
-                            value: "true".to_string(),
-                        },
-                        PluginSettingEntry {
-                            key: "backup_originals".to_string(),
-                            label: "Backup original files".to_string(),
-                            description: None,
-                            value: "false".to_string(),
-                        },
-                    ],
-                },
-                PluginEntry {
-                    id: "conflict-reporter".to_string(),
-                    name: "Conflict Reporter".to_string(),
-                    version: "0.9.1".to_string(),
-                    author: "Example".to_string(),
-                    description: "Writes a human-readable conflict report to the plugin data directory after each VFS mount.".to_string(),
-                    enabled: true,
-                    settings: vec![
-                        PluginSettingEntry {
-                            key: "output_format".to_string(),
-                            label: "Output format".to_string(),
-                            description: Some("File format for the generated report.".to_string()),
-                            value: "markdown".to_string(),
-                        },
-                    ],
-                },
-                PluginEntry {
-                    id: "launch-logger".to_string(),
-                    name: "Launch Logger".to_string(),
-                    version: "1.0.0".to_string(),
-                    author: "Community".to_string(),
-                    description: "Logs each game launch with timestamp, profile, and mod count.".to_string(),
-                    enabled: false,
-                    settings: vec![],
-                },
-            ],
+            plugins: vec![],
         }
     }
 }

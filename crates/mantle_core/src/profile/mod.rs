@@ -196,9 +196,7 @@ pub fn activate_profile(
     event_bus: &Arc<EventBus>,
 ) -> Result<MountHandle, MantleError> {
     // Capture the current active profile name for the ProfileChanged event.
-    let old_profile_name = get_active_profile(conn)?
-        .map(|p| p.name)
-        .unwrap_or_else(|| String::from("none"));
+    let old_profile_name = get_active_profile(conn)?.map_or_else(|| String::from("none"), |p| p.name);
 
     // Verify the target profile exists before touching the VFS.
     let new_profile = get_profile_by_id(conn, profile_id)?

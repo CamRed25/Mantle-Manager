@@ -104,11 +104,11 @@ impl GameIni {
         let raw = fs::read_to_string(path)
             .map_err(MantleError::Io)?;
 
-        Ok(Self::parse(raw, path.to_path_buf()))
+        Ok(Self::parse(&raw, path.to_path_buf()))
     }
 
     /// Parse INI text into a `GameIni`.  Used internally and in tests.
-    fn parse(text: String, path: PathBuf) -> Self {
+    fn parse(text: &str, path: PathBuf) -> Self {
         let mut sections: IndexMap<String, IndexMap<String, String>> = IndexMap::new();
         let mut raw_lines: Vec<RawLine> = Vec::new();
         let mut current_section = String::new();
@@ -201,7 +201,7 @@ impl GameIni {
         for line in &mut self.raw_lines {
             if let RawLine::KeyValue { norm_section, key: k, value: v } = line {
                 if norm_section == &norm_sec && k.to_lowercase() == norm_key {
-                    *v = value.clone();
+                    v.clone_from(&value);
                     updated = true;
                     break;
                 }
@@ -359,7 +359,7 @@ pub fn apply_profile_ini(
         let entry = entry.map_err(MantleError::Io)?;
         let src = entry.path();
 
-        if src.extension().and_then(|e| e.to_str()).map_or(false, |e| {
+        if src.extension().and_then(|e| e.to_str()).is_some_and(|e| {
             e.eq_ignore_ascii_case("ini")
         }) {
             let file_name = entry.file_name();
@@ -405,7 +405,7 @@ pub fn snapshot_profile_ini(
         let entry = entry.map_err(MantleError::Io)?;
         let src = entry.path();
 
-        if src.extension().and_then(|e| e.to_str()).map_or(false, |e| {
+        if src.extension().and_then(|e| e.to_str()).is_some_and(|e| {
             e.eq_ignore_ascii_case("ini")
         }) {
             let file_name = entry.file_name();
@@ -448,7 +448,7 @@ sStartingCell =
 
     #[test]
     fn parse_sections_and_keys() {
-        let ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         // Both sections present.
         assert!(ini.sections.contains_key("display"));
         assert!(ini.sections.contains_key("general"));
@@ -460,7 +460,7 @@ sStartingCell =
 
     #[test]
     fn get_case_insensitive_section_and_key() {
-        let ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         // Both section and key lookups must be case-insensitive.
         assert_eq!(ini.get("DISPLAY", "BFULL SCREEN"), Some("0"));
         assert_eq!(ini.get("display", "isize h"), Some("1080"));
@@ -469,13 +469,13 @@ sStartingCell =
 
     #[test]
     fn get_missing_section_returns_none() {
-        let ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         assert!(ini.get("NonExistent", "SomeKey").is_none());
     }
 
     #[test]
     fn get_missing_key_returns_none() {
-        let ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         assert!(ini.get("Display", "NonExistentKey").is_none());
     }
 
@@ -483,21 +483,21 @@ sStartingCell =
 
     #[test]
     fn set_updates_existing_key() {
-        let mut ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let mut ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         ini.set("Display", "bFull Screen", "1");
         assert_eq!(ini.get("Display", "bFull Screen"), Some("1"));
     }
 
     #[test]
     fn set_creates_key_in_existing_section() {
-        let mut ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let mut ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         ini.set("Display", "iRefreshRate", "144");
         assert_eq!(ini.get("Display", "iRefreshRate"), Some("144"));
     }
 
     #[test]
     fn set_creates_new_section_and_key() {
-        let mut ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let mut ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         ini.set("Grass", "iMaxGrassTypesPerTexure", "15");
         assert!(ini.sections.contains_key("grass"));
         assert_eq!(ini.get("Grass", "iMaxGrassTypesPerTexure"), Some("15"));
@@ -505,7 +505,7 @@ sStartingCell =
 
     #[test]
     fn set_preserves_section_count() {
-        let mut ini = GameIni::parse(SAMPLE_INI.to_string(), PathBuf::from("test.ini"));
+        let mut ini = GameIni::parse(SAMPLE_INI, PathBuf::from("test.ini"));
         // Updating an existing key should not create a duplicate section.
         ini.set("Display", "bFull Screen", "1");
         assert_eq!(ini.sections.len(), 2, "no new sections should be created");
@@ -519,7 +519,7 @@ sStartingCell =
         let path = tmp.path().join("Skyrim.ini");
 
         // Parse + save.
-        let mut ini = GameIni::parse(SAMPLE_INI.to_string(), path.clone());
+        let mut ini = GameIni::parse(SAMPLE_INI, path.clone());
         ini.set("Display", "bFull Screen", "1");
         ini.save_to(&path).unwrap();
 
@@ -535,7 +535,7 @@ sStartingCell =
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("Skyrim.ini");
 
-        let ini = GameIni::parse(SAMPLE_INI.to_string(), path.clone());
+        let ini = GameIni::parse(SAMPLE_INI, path.clone());
         ini.save_to(&path).unwrap();
 
         let reloaded = GameIni::load(&path).unwrap();

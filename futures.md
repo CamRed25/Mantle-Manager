@@ -486,3 +486,19 @@
 - **`error.rs`** — `MantleError::Skse(String)` variant added.
 - **UI** (`mantle_ui/src/window.rs`): `[cfg(feature = "net")]` "Script Extender" header bar button (`system-software-update-symbolic`); disabled until a supported game is detected; `wire_skse_button` / `run_skse_install` helpers follow OS-thread + mpsc + `glib::idle_add_local` pattern; progress shown via `adw::Toast` title mutation.
 - **Tests:** 33 new unit tests across 4 new modules. `cargo test --package mantle_core --features net` — all passing. `cargo clippy --package mantle_core --features net -- -D warnings` clean.
+
+### game/ini.rs — per-profile INI management (item d)
+- **Date:** 2026-03-05
+- **Reference:** path.md §d, commit e54d733
+- `game/ini.rs`: `GameIni` struct backed by `IndexMap<String, IndexMap<String, String>>` for section-order preservation; hand-rolled parser (no extra dependency). `load(path)` returns an empty struct when the file is absent. `get(section, key)` is case-insensitive on both axes. `set(section, key, value)` creates the section if absent. `save()` and `save_to(path)` write back preserving comments and blank lines. `apply_profile_ini(profile_ini_dir, game_ini_dir)` bulk-copies every `*.ini` from the profile snapshot into the Proton prefix My Games dir, creating missing destination directories. `snapshot_profile_ini(game_ini_dir, profile_ini_dir)` captures current game INIs into the profile dir. `activate_profile` signature extended with `game_ini_dir: Option<&Path>` and `event_bus: &Arc<EventBus>`; applies INIs after overlay mount succeeds then emits `ProfileChanged`. **12 inline unit tests.**
+
+### game/steam.rs — registry fallback in game detection (item e)
+- **Date:** 2026-03-05
+- **Reference:** path.md §e, commit e54d733
+- `find_extra_install_path(pfx, app_id)` in `game/steam.rs`: loads `system.reg` from the Proton prefix via the existing `load_system_reg` helper, looks up `Software\\Valve\\Steam\\Apps\\{app_id}\\InstallPath`, converts Wine backslash path to `PathBuf`, returns `Some(path)` only when the path exists on disk. `detect_all` (and `detect_all_steam`) deduplicate the combined steamlocate + registry results by `steam_app_id` before returning, so steamlocate and registry agreement produces one canonical entry rather than a duplicate.
+
+### state_worker.rs / window.rs — EventBus wiring (item f)
+- **Date:** 2026-03-05
+- **Reference:** path.md §f, commit e54d733
+- `state_worker::spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>)`: worker thread now stays alive after the initial load; subscribes to `ModEnabled`, `ModDisabled`, and `ProfileChanged` events; each handler calls `resend_state` which re-runs `load_state()` and pushes a fresh `AppState` snapshot. `trigger_reload` exposed as a direct call path for other callers. `Arc<EventBus>` constructed once in `window.rs::build_ui`, threaded through `build_main_content` and `apply_state_update` into each page builder that wires action buttons. `mods::build` publishes `ModEnabled`/`ModDisabled` on switch toggle; `profiles::build` publishes `ProfileChanged` on profile activation. `SubscriptionHandle`s owned by the worker thread for its full lifetime to prevent premature unsubscription.
+
