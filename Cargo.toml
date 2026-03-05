@@ -59,3 +59,5 @@ reqwest = { version = "~0.11", default-features = false, features = ["rustls-tls
 uuid = { version = "1", features = ["v4"] }
 # Temporary files/directories used in tests.
 tempfile = "3"
+# Ordered hash map — used by GameIni to preserve INI section and key insertion order.
+indexmap = "~2.0"

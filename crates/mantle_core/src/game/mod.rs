@@ -21,10 +21,12 @@
 //! - [`proton`] — Proton prefix location and Wine prefix helpers
 
 pub mod games;
+pub mod ini;
 pub mod proton;
 pub mod registry;
 pub mod steam;
 
+pub use ini::{apply_profile_ini, snapshot_profile_ini, GameIni};
 pub use registry::{load_system_reg, load_user_reg, wine_c_drive, RegistryHive, RegistryValue};
 pub use steam::detect_all_steam;
 

@@ -38,6 +38,7 @@ libloading.workspace = true
 rhai.workspace = true
 rusqlite.workspace = true
 compress-tools.workspace = true
+indexmap.workspace = true
 tempfile = "3"
 
 [dev-dependencies]

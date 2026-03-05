@@ -5,10 +5,11 @@
 //! [`gtk4::glib::Sender`].
 //!
 //! # Delivery model
-//! Currently delivers a **single snapshot** on application startup.  Live
-//! updates (re-send when profile changes, mods are enabled/disabled, etc.)
-//! require wiring the plugin [`EventBus`] into this thread and are deferred
-//! to item z / the full signal wiring pass.
+//! Delivers an initial snapshot on startup, then stays alive subscribed to
+//! the shared [`EventBus`].  Whenever a [`ModManagerEvent`] matching any of
+//! `ModInstalled`, `ModEnabled`, `ModDisabled`, or `ProfileChanged` is
+//! published on the bus, the thread re-runs [`load_state`] and sends a fresh
+//! [`AppState`] snapshot to the UI thread.
 //!
 //! # First launch
 //! If neither the database nor the config file exist yet, this worker creates
@@ -22,9 +23,10 @@
 //! - `launch_target` — currently mirrors `game_name`; proper xSE detection deferred.
 //! - `downloads` — the download queue lives in-memory; no DB persistence yet.
 //!
-//! [`EventBus`]: mantle_core::plugin::event::EventBus
+//! [`EventBus`]: mantle_core::plugin::EventBus
+//! [`ModManagerEvent`]: mantle_core::plugin::ModManagerEvent
 
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Arc, Condvar, Mutex};
 
 use mantle_core::{
     config::{default_db_path, AppSettings},
@@ -32,44 +34,125 @@ use mantle_core::{
         profiles::{self, InsertProfile},
         Database,
     },
-    game, mod_list, vfs,
+    game, mod_list,
+    plugin::{EventBus, EventFilter},
+    vfs,
 };
 
 use crate::state::{AppState, ModEntry, ProfileEntry, ThemeEntry};
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/// Spawn a background OS thread that loads the initial [`AppState`] from
-/// `mantle_core` and sends it via `sender`.
+/// Trigger a one-shot state reload without starting a new subscription loop.
 ///
-/// The thread exits after delivering the snapshot.  No live-update loop is
-/// started here; that is deferred to item z.
+/// Spawns a short-lived OS thread that runs [`load_state`] once and delivers
+/// the result over `sender`.  Use this for `refresh_fn` callbacks that need
+/// to force an immediate UI update after a DB-mutating user action.
+///
+/// Unlike [`spawn`], the spawned thread exits as soon as the state is sent
+/// (or the send fails).  It does **not** subscribe to the event bus.
+///
+/// # Parameters
+/// - `sender`: The sending end of a `std::sync::mpsc::channel::<AppState>`.
+pub fn trigger_reload(sender: Sender<AppState>) {
+    std::thread::spawn(move || resend_state(&sender));
+}
+
+/// Spawn a background OS thread that loads the initial [`AppState`] from
+/// `mantle_core`, sends it via `sender`, then stays alive subscribed to the
+/// shared [`EventBus`] to re-send the state whenever anything changes.
+///
+/// The thread is kept alive indefinitely using a `Condvar` that is never
+/// notified.  All four [`SubscriptionHandle`]s are held inside the closure so
+/// they are dropped only when the thread exits (i.e. when the process shuts
+/// down), which means the handlers remain active for the full session.
 ///
 /// # Parameters
 /// - `sender`: The sending end of a `std::sync::mpsc::channel::<AppState>`.
 ///   The corresponding receiver must already be registered with
 ///   `glib::idle_add_local` before this function is called to avoid missing
 ///   the delivery.
+/// - `event_bus`: Shared event bus — the worker subscribes to
+///   `ModInstalled`, `ModEnabled`, `ModDisabled`, and `ProfileChanged`.
 ///
 /// # Side Effects
 /// Spawns one OS thread.  The thread opens (or creates) the `SQLite`
-/// database and reads profiles, mods, and config.
-pub fn spawn(sender: Sender<AppState>) {
-    std::thread::spawn(move || match load_state() {
-        Ok(state) => {
-            if sender.send(state).is_err() {
-                tracing::warn!("state_worker: receiver dropped before initial state was delivered");
-            }
-        }
-        Err(e) => {
-            tracing::warn!(
-                "state_worker: failed to load initial state, UI will keep placeholder: {e}"
-            );
-        }
+/// database and reads profiles, mods, and config on every delivery.
+///
+/// # Notes
+/// The returned `JoinHandle` is intentionally dropped; the thread stays alive
+/// until the process exits.
+///
+/// [`SubscriptionHandle`]: mantle_core::plugin::SubscriptionHandle
+pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
+    std::thread::spawn(move || {
+        // ── Initial state load ────────────────────────────────────────────
+        resend_state(&sender);
+
+        // ── Subscribe to live events ──────────────────────────────────────
+        // Each handler clones the sender and calls resend_state.
+        // The SubscriptionHandle variables must be kept alive — dropping them
+        // would immediately unsubscribe.
+        let s1 = sender.clone();
+        let _sub_mod_installed =
+            EventBus::subscribe(&event_bus, EventFilter::ModInstalled, move |_| {
+                resend_state(&s1);
+            });
+
+        let s2 = sender.clone();
+        let _sub_mod_enabled =
+            EventBus::subscribe(&event_bus, EventFilter::ModEnabled, move |_| {
+                resend_state(&s2);
+            });
+
+        let s3 = sender.clone();
+        let _sub_mod_disabled =
+            EventBus::subscribe(&event_bus, EventFilter::ModDisabled, move |_| {
+                resend_state(&s3);
+            });
+
+        let s4 = sender.clone();
+        let _sub_profile_changed =
+            EventBus::subscribe(&event_bus, EventFilter::ProfileChanged, move |_| {
+                resend_state(&s4);
+            });
+
+        // ── Keep thread alive ─────────────────────────────────────────────
+        // Block forever so the SubscriptionHandles above are not dropped.
+        // Handlers are called from the EventBus's internal lock, so they do
+        // not depend on this thread being runnable.
+        let mutex = Mutex::new(());
+        let condvar = Condvar::new();
+        let guard = mutex.lock().expect("state_worker Mutex poisoned");
+        drop(condvar.wait(guard));
     });
 }
 
 // ─── Private implementation ───────────────────────────────────────────────────
+
+/// Re-run [`load_state`] and send the result over `sender`.
+///
+/// Called both for the initial delivery (inside [`spawn`]) and from every
+/// event-bus subscription handler to push a fresh snapshot to the UI whenever
+/// the manager's state changes.
+///
+/// Errors are logged as warnings and do not panic, keeping the UI functional
+/// even if a transient DB read fails.
+///
+/// # Parameters
+/// - `sender`: The sending end of the state MPSC channel.
+fn resend_state(sender: &Sender<AppState>) {
+    match load_state() {
+        Ok(state) => {
+            if sender.send(state).is_err() {
+                tracing::warn!("state_worker: receiver dropped; state delivery skipped");
+            }
+        }
+        Err(e) => {
+            tracing::warn!("state_worker: resend failed — {e}");
+        }
+    }
+}
 
 /// Load an [`AppState`] snapshot from the database and config files.
 ///

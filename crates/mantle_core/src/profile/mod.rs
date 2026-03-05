@@ -14,7 +14,7 @@
 //! let id = profile::create_profile(&conn, "Default", None)?;
 //!
 //! // Activate it when the user clicks "Launch".
-//! let handle = profile::activate_profile(&conn, id, Path::new("/game/Data"))?;
+//! let handle = profile::activate_profile(&conn, id, Path::new("/game/Data"), None, &bus)?;
 //!
 //! // … game runs …
 //! handle.unmount()?;
@@ -26,17 +26,23 @@
 //! profile::delete_profile(&conn, id2)?;
 //! ```
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use rusqlite::Connection;
 
 use crate::{
+    config::data_dir,
     data::profiles::{
         delete_profile as db_delete_profile, get_active_profile, get_profile_by_id, insert_profile,
         set_active_profile, InsertProfile,
     },
     error::MantleError,
+    game::ini::apply_profile_ini,
     mod_list::{add_mod_to_profile, list_profile_mods},
+    plugin::{EventBus, ModManagerEvent},
     vfs::{
         backend::select_backend, cleanup::teardown_stale, mount::mount_with, types::MountParams,
         MountHandle,
@@ -147,7 +153,9 @@ pub fn delete_profile(conn: &Connection, profile_id: i64) -> Result<bool, Mantle
 }
 
 /// Activate a profile: tear down any existing VFS overlay, mark the profile
-/// active in the database, then mount a new overlay for its enabled mod list.
+/// active in the database, mount a new overlay for its enabled mod list, apply
+/// per-profile INI overrides, and publish a [`ModManagerEvent::ProfileChanged`]
+/// event on the shared bus.
 ///
 /// The caller **must** hold the returned [`MountHandle`] for the lifetime of
 /// the game session.  Call [`MountHandle::unmount`] after the game exits to
@@ -158,6 +166,16 @@ pub fn delete_profile(conn: &Connection, profile_id: i64) -> Result<bool, Mantle
 /// - `profile_id`: Primary key of the profile to activate.
 /// - `game_data_dir`: Absolute path to the game's `Data/` directory. This
 ///   becomes the VFS merge point — the game reads its files from here.
+/// - `proton_prefix`: Optional path to the Proton/Wine prefix root (the
+///   `pfx/` directory). When `Some`, per-profile INI files are copied from
+///   `{data_dir}/profiles/{profile_id}/ini/` into the Wine-prefix game
+///   document directory. When `None`, INI synchronisation is skipped.
+/// - `game_ini_dir`: When `proton_prefix` is `Some`, the absolute path to the
+///   game's INI directory inside the Wine prefix (e.g.
+///   `pfx/drive_c/users/steamuser/My Documents/My Games/Skyrim Special
+///   Edition/`). Ignored when `proton_prefix` is `None`.
+/// - `event_bus`: Shared event bus — a [`ModManagerEvent::ProfileChanged`]
+///   event is published after successful activation.
 ///
 /// # Returns
 /// A [`MountHandle`] wrapping the active overlay.
@@ -166,15 +184,25 @@ pub fn delete_profile(conn: &Connection, profile_id: i64) -> Result<bool, Mantle
 /// - [`MantleError::NotFound`] if `profile_id` does not exist.
 /// - [`MantleError::Database`] if a SQL operation fails.
 /// - [`MantleError::Vfs`] if mounting or teardown fails.
+///
+/// INI synchronisation errors are logged as warnings but do **not** cause this
+/// function to return an error — a missing INI snapshot should never prevent
+/// a profile from being activated.
 pub fn activate_profile(
     conn: &Connection,
     profile_id: i64,
     game_data_dir: &Path,
+    game_ini_dir: Option<&Path>,
+    event_bus: &Arc<EventBus>,
 ) -> Result<MountHandle, MantleError> {
+    // Capture the current active profile name for the ProfileChanged event.
+    let old_profile_name = get_active_profile(conn)?
+        .map(|p| p.name)
+        .unwrap_or_else(|| String::from("none"));
+
     // Verify the target profile exists before touching the VFS.
-    if get_profile_by_id(conn, profile_id)?.is_none() {
-        return Err(MantleError::NotFound(format!("profile id {profile_id} not found")));
-    }
+    let new_profile = get_profile_by_id(conn, profile_id)?
+        .ok_or_else(|| MantleError::NotFound(format!("profile id {profile_id} not found")))?;
 
     // Tear down any overlay that may be lingering from a previous session or
     // from the currently active profile.  teardown_stale is a no-op when
@@ -203,7 +231,29 @@ pub fn activate_profile(
         merge_dir: game_data_dir.to_path_buf(),
     };
 
-    mount_with(backend, params)
+    let handle = mount_with(backend, params)?;
+
+    // Apply per-profile INI overrides if the caller supplied a game INI dir.
+    // Errors here are non-fatal — log a warning and continue.
+    if let Some(ini_dir) = game_ini_dir {
+        let profile_ini_dir = data_dir()
+            .join("profiles")
+            .join(profile_id.to_string())
+            .join("ini");
+        if let Err(e) = apply_profile_ini(&profile_ini_dir, ini_dir) {
+            tracing::warn!(
+                "activate_profile: INI apply failed for profile {profile_id} — {e}; continuing"
+            );
+        }
+    }
+
+    // Notify subscribers that the active profile changed.
+    event_bus.publish(&ModManagerEvent::ProfileChanged {
+        old: old_profile_name,
+        new: new_profile.name,
+    });
+
+    Ok(handle)
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────

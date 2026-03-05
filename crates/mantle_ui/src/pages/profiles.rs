@@ -25,10 +25,12 @@
 //! - `path.md` item w
 
 use std::rc::Rc;
+use std::sync::Arc;
 
 use adw::prelude::*;
 use gtk4::{glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, Separator};
 use libadwaita as adw;
+use mantle_core::plugin::{EventBus, ModManagerEvent};
 
 use crate::state::{AppState, ProfileEntry};
 
@@ -43,16 +45,20 @@ use crate::state::{AppState, ProfileEntry};
 /// - `state`: Read-only application state snapshot.
 /// - `window`: Main application window; used as `transient_for` for dialogs.
 /// - `refresh`: Callback to trigger a full state reload after a DB mutation.
-pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn Fn()>) -> GtkBox {
+/// - `event_bus`: Shared event bus — the activate button publishes a
+///   [`ModManagerEvent::ProfileChanged`] event on successful activation.
+pub fn build(state: &AppState, window: &adw::ApplicationWindow, refresh: &Rc<dyn Fn()>, event_bus: &Arc<EventBus>) -> GtkBox {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
     outer.append(&toolbar(window, refresh));
     outer.append(&Separator::new(Orientation::Horizontal));
 
+    let active_label = state.active_profile.clone();
+
     if state.profiles.is_empty() {
         outer.append(&empty_state());
     } else {
-        outer.append(&profile_scroll(state, window, refresh));
+        outer.append(&profile_scroll(state, window, refresh, &active_label, event_bus));
     }
 
     outer
@@ -240,13 +246,14 @@ fn empty_state() -> adw::StatusPage {
 /// Wraps the profile list in a [`ScrolledWindow`].
 ///
 /// # Parameters
-/// - `state`: Source of the profile list.
-/// - `window`: Transient parent for row-level dialogs.
-/// - `refresh`: Callback to queue a state reload after a DB mutation.
+/// - `active_label`: Current active profile name for ProfileChanged events.
+/// - `event_bus`: Shared event bus forwarded to profile_list.
 fn profile_scroll(
     state: &AppState,
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
+    active_label: &str,
+    event_bus: &Arc<EventBus>,
 ) -> ScrolledWindow {
     let scroll = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
@@ -263,7 +270,7 @@ fn profile_scroll(
         .margin_end(12)
         .build();
 
-    content.append(&profile_list(state, window, refresh));
+    content.append(&profile_list(state, window, refresh, &active_label, event_bus));
 
     scroll.set_child(Some(&content));
     scroll
@@ -279,12 +286,14 @@ fn profile_list(
     state: &AppState,
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
+    active_label: &str,
+    event_bus: &Arc<EventBus>,
 ) -> ListBox {
     let list = ListBox::builder().selection_mode(gtk4::SelectionMode::None).build();
     list.add_css_class("boxed-list");
 
     for entry in &state.profiles {
-        list.append(&profile_row(entry, window, refresh));
+        list.append(&profile_row(entry, window, refresh, active_label, event_bus));
     }
 
     list
@@ -306,13 +315,14 @@ fn profile_list(
 /// ```
 ///
 /// # Parameters
-/// - `entry`: Profile data to display.
-/// - `window`: Transient parent for dialogs.
-/// - `refresh`: Callback to queue a state reload after any DB mutation.
+/// - `active_label`: Current active profile name (for ProfileChanged event).
+/// - `event_bus`: Shared event bus — activate button publishes ProfileChanged.
 fn profile_row(
     entry: &ProfileEntry,
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
+    active_label: &str,
+    event_bus: &Arc<EventBus>,
 ) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
         .title(&entry.name)
@@ -337,7 +347,8 @@ fn profile_row(
         badge.set_valign(gtk4::Align::Center);
         row.add_suffix(&badge);
     } else {
-        // Activation changes only the DB record; VFS remount added in item e.
+        // Activation changes only the DB record; the EventBus ProfileChanged
+        // event is published so state_worker can resend a fresh AppState.
         let activate_btn = gtk4::Button::builder()
             .label("Activate")
             .tooltip_text(format!("Switch to profile \u{ab}{}\u{bb}", entry.name))
@@ -347,13 +358,22 @@ fn profile_row(
         activate_btn.set_widget_name(&format!("activate-{}", entry.id));
 
         let pid_str = entry.id.clone();
+        let new_name = entry.name.clone();
+        let old_name = active_label.to_string();
         let refresh_act = Rc::clone(refresh);
+        let bus_act = Arc::clone(event_bus);
         activate_btn.connect_clicked(move |_| {
             if let Ok(pid) = pid_str.parse::<i64>() {
                 match with_db(|db| {
                     db.with_conn(|conn| mantle_core::data::profiles::set_active_profile(conn, pid))
                 }) {
-                    Ok(()) => refresh_act(),
+                    Ok(()) => {
+                        bus_act.publish(&ModManagerEvent::ProfileChanged {
+                            old: old_name.clone(),
+                            new: new_name.clone(),
+                        });
+                        refresh_act();
+                    }
                     Err(e) => tracing::warn!("activate profile failed: {e}"),
                 }
             }

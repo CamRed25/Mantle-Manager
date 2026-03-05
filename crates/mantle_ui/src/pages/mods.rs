@@ -29,13 +29,19 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use adw::prelude::*;
 use gtk4::{
     glib, Box as GtkBox, Label, ListBox, Orientation, ScrolledWindow, SearchEntry, Separator,
 };
 use libadwaita as adw;
-use mantle_core::{config::default_db_path, data::Database, Error as CoreError};
+use mantle_core::{
+    config::default_db_path,
+    data::Database,
+    plugin::{EventBus, ModManagerEvent, ModInfo},
+    Error as CoreError,
+};
 
 use crate::state::{AppState, ModEntry};
 
@@ -78,6 +84,7 @@ pub fn build(
     window: &adw::ApplicationWindow,
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
+    event_bus: &Arc<EventBus>,
 ) -> GtkBox {
     let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(0).build();
 
@@ -86,7 +93,7 @@ pub fn build(
 
     // Build the ListBox first so the toolbar's SearchEntry can call
     // invalidate_filter() on it.
-    let list = mod_list_box(state, refresh, Rc::clone(&search_text));
+    let list = mod_list_box(state, refresh, Rc::clone(&search_text), event_bus);
 
     outer.append(&toolbar_bar(state, &list, Rc::clone(&search_text), window, toast_overlay));
     outer.append(&Separator::new(Orientation::Horizontal));
@@ -288,12 +295,13 @@ fn mod_list_box(
     state: &AppState,
     refresh: &Rc<dyn Fn()>,
     search_text: Rc<RefCell<String>>,
+    event_bus: &Arc<EventBus>,
 ) -> ListBox {
     let list = ListBox::builder().selection_mode(gtk4::SelectionMode::Single).build();
     list.add_css_class("boxed-list");
 
     for (idx, entry) in state.mods.iter().enumerate() {
-        list.append(&mod_row(idx + 1, entry, refresh));
+        list.append(&mod_row(idx + 1, entry, refresh, event_bus));
     }
 
     // Filter: show row if its widget_name (lowercased mod name) contains the
@@ -326,7 +334,7 @@ fn mod_list_box(
 /// - `priority`: 1-based priority number (1 = highest priority).
 /// - `entry`: Mod data to display and IDs to use in DB calls.
 /// - `refresh`: Callback to queue a state reload after a successful toggle.
-fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> gtk4::ListBoxRow {
+fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>, event_bus: &Arc<EventBus>) -> gtk4::ListBoxRow {
     let content = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -356,15 +364,37 @@ fn mod_row(priority: usize, entry: &ModEntry, refresh: &Rc<dyn Fn()>) -> gtk4::L
     }));
     toggle.set_widget_name(&format!("switch-{}-{}", entry.profile_id, entry.mod_id));
 
-    // Wire the switch: state-set → set_mod_enabled → refresh
+    // Wire the switch: state-set → set_mod_enabled → publish event → refresh
     let mid = entry.mod_id;
     let pid = entry.profile_id;
+    let mod_name = entry.name.clone();
+    let mod_version = entry.version.clone().unwrap_or_default();
+    let mod_priority = priority as i64;
     let refresh_sw = Rc::clone(refresh);
+    let bus_sw = Arc::clone(event_bus);
     toggle.connect_state_set(move |_, enabled| {
         match with_db(|db| {
             db.with_conn(|conn| mantle_core::mod_list::set_mod_enabled(conn, pid, mid, enabled))
         }) {
-            Ok(_) => refresh_sw(),
+            Ok(_) => {
+                let info = ModInfo {
+                    id: mid,
+                    slug: mod_name.to_lowercase().replace(' ', "_"),
+                    name: mod_name.clone(),
+                    version: mod_version.clone(),
+                    author: String::new(),
+                    priority: mod_priority,
+                    is_enabled: enabled,
+                    install_dir: String::new(),
+                };
+                let event = if enabled {
+                    ModManagerEvent::ModEnabled(info)
+                } else {
+                    ModManagerEvent::ModDisabled(info)
+                };
+                bus_sw.publish(&event);
+                refresh_sw();
+            }
             Err(e) => tracing::warn!("set_mod_enabled failed: {e}"),
         }
         false.into()

@@ -32,12 +32,16 @@ use std::cell::Cell;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use adw::prelude::*;
 use gtk4::glib;
 use libadwaita as adw;
 
-use mantle_core::config::{default_settings_path, AppSettings};
+use mantle_core::{
+    config::{default_settings_path, AppSettings},
+    plugin::EventBus,
+};
 
 use crate::{
     downloads::{DownloadProgress, DownloadQueue},
@@ -90,6 +94,12 @@ pub fn build_ui(app: &adw::Application) {
     // std::sync::mpsc is used because glib::MainContext::channel was removed
     // in glib 0.19.  The idle_add_local callback polls try_recv() each cycle.
     let (sender, receiver) = std::sync::mpsc::channel::<AppState>();
+
+    // ── Shared event bus ──────────────────────────────────────────────────
+    // Created once here and threaded through to every subsystem that either
+    // publishes events (mods enable/disable, profile activate) or consumes
+    // them (state_worker, which re-sends AppState on any change).
+    let event_bus = Arc::new(EventBus::new());
 
     // ── Download progress channel (future background tasks → GTK thread) ──
     // Background download workers will clone `progress_tx` and push
@@ -176,14 +186,16 @@ pub fn build_ui(app: &adw::Application) {
     // The idle callback stays registered as `Continue` so it processes every
     // delivery — both the initial startup load and user-triggered reloads.
     let refresh_sender = sender.clone();
-    let refresh_fn: Rc<dyn Fn()> = Rc::new(move || state_worker::spawn(refresh_sender.clone()));
+    let refresh_fn: Rc<dyn Fn()> = Rc::new(move || {
+        state_worker::trigger_reload(refresh_sender.clone());
+    });
 
     // ── Initial page content ──────────────────────────────────────────────
     // ToastOverlay created here so it can be passed to page builders that
     // need to show feedback (e.g. the mods page "Add Mod" button).
     let toast_overlay = adw::ToastOverlay::new();
     let (stack, aside) =
-        build_main_content(&placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc);
+        build_main_content(&placeholder, &window, &refresh_fn, &toast_overlay, &queue_rc, &event_bus);
     switcher.set_stack(Some(&stack));
 
     // NavigationSplitView: sidebar = summary panel (left), content = ViewStack (right).
@@ -239,7 +251,7 @@ pub fn build_ui(app: &adw::Application) {
     window.present();
 
     // ── Background state loader ───────────────────────────────────────────
-    state_worker::spawn(sender);
+    state_worker::spawn(sender, Arc::clone(&event_bus));
 
     // ── Idle poll: replace content whenever a new AppState is delivered ───
     //
@@ -255,6 +267,7 @@ pub fn build_ui(app: &adw::Application) {
     let refresh_fn_c = Rc::clone(&refresh_fn);
     let toast_overlay_c = toast_overlay.clone();
     let queue_idle = Rc::clone(&queue_rc);
+    let event_bus_idle = Arc::clone(&event_bus);
     #[cfg(feature = "net")]
     let skse_btn_c = skse_btn.clone();
     #[cfg(feature = "net")]
@@ -274,6 +287,7 @@ pub fn build_ui(app: &adw::Application) {
                     &refresh_fn_c,
                     &toast_overlay_c,
                     &queue_idle,
+                    &event_bus_idle,
                 );
                 // Update SKSE button sensitivity whenever live state arrives.
                 #[cfg(feature = "net")]
@@ -332,6 +346,7 @@ pub fn build_ui(app: &adw::Application) {
 /// - `refresh`: Refresh callback passed through to page builders.
 /// - `toast_overlay`: Toast overlay passed through to page builders.
 /// - `queue`: Shared download queue forwarded to the downloads page.
+/// - `event_bus`: Shared event bus forwarded to mods / profiles page builders.
 #[allow(clippy::too_many_arguments)]
 fn apply_state_update(
     state: &AppState,
@@ -342,10 +357,11 @@ fn apply_state_update(
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
     queue: &Rc<RefCell<DownloadQueue>>,
+    event_bus: &Arc<EventBus>,
 ) {
     let (split_view, switcher) = nav;
     let (new_stack, new_aside) =
-        build_main_content(state, window, refresh, toast_overlay, queue);
+        build_main_content(state, window, refresh, toast_overlay, queue, event_bus);
     switcher.set_stack(Some(&new_stack));
 
     let new_sidebar = adw::NavigationPage::builder().title("Summary").child(&new_aside).build();
@@ -374,6 +390,8 @@ fn apply_state_update(
 ///   DB-mutating user action so the UI reflects the new state.
 /// - `queue`: Shared download queue forwarded to the downloads page so
 ///   its action buttons can mutate queue state directly.
+/// - `event_bus`: Shared event bus forwarded to mods and profiles page
+///   builders so they can publish events on user actions.
 ///
 /// # Returns
 /// `(stack, aside)` — the five-tab view stack and the scrollable sidebar.
@@ -383,6 +401,7 @@ fn build_main_content(
     refresh: &Rc<dyn Fn()>,
     toast_overlay: &adw::ToastOverlay,
     queue: &Rc<RefCell<DownloadQueue>>,
+    event_bus: &Arc<EventBus>,
 ) -> (adw::ViewStack, gtk4::ScrolledWindow) {
     let stack = adw::ViewStack::new();
 
@@ -406,7 +425,7 @@ fn build_main_content(
     ov_page.set_icon_name(Some("go-home-symbolic"));
 
     let mods_page =
-        stack.add_titled(&mods::build(state, window, refresh, toast_overlay), Some("mods"), "Mods");
+        stack.add_titled(&mods::build(state, window, refresh, toast_overlay, event_bus), Some("mods"), "Mods");
     mods_page.set_icon_name(Some("application-x-addon-symbolic"));
 
     let plugins_page =
@@ -425,7 +444,7 @@ fn build_main_content(
     downloads_page.set_icon_name(Some("folder-download-symbolic"));
 
     let profiles_page =
-        stack.add_titled(&profiles::build(state, window, refresh), Some("profiles"), "Profiles");
+        stack.add_titled(&profiles::build(state, window, refresh, event_bus), Some("profiles"), "Profiles");
     profiles_page.set_icon_name(Some("avatar-default-symbolic"));
 
     let aside = sidebar::build(state);

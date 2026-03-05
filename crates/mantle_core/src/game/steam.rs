@@ -143,6 +143,38 @@ pub fn detect_all(steam: &SteamDir) -> Result<Vec<GameInfo>, MantleError> {
         }
     }
 
+    // ── Registry fallback ─────────────────────────────────────────────────
+    // steamlocate occasionally misses games whose install path is recorded in
+    // the Proton/Wine registry rather than in the Steam library manifest.
+    // For each already-detected game that has a Proton prefix, consult the
+    // Wine system registry for an alternative install path.  If the registry
+    // path points to a real directory (and differs from what steamlocate found),
+    // append a secondary GameInfo with the corrected paths.
+    let mut registry_extras: Vec<GameInfo> = Vec::new();
+    for g in &games {
+        if let Some(pfx) = &g.proton_prefix {
+            if let Some(extra_install) = find_extra_install_path(pfx, g.steam_app_id) {
+                if extra_install != g.install_path {
+                    let def = match games::by_app_id(g.steam_app_id) {
+                        Some(d) => d,
+                        None => continue,
+                    };
+                    let extra_data = def.data_path(&extra_install);
+                    registry_extras.push(GameInfo {
+                        install_path: extra_install,
+                        data_path: extra_data,
+                        ..g.clone()
+                    });
+                }
+            }
+        }
+    }
+    games.extend(registry_extras);
+
+    // Deduplicate by steam_app_id — steamlocate's entry wins (first seen wins).
+    let mut seen_app_ids = std::collections::HashSet::new();
+    games.retain(|g| seen_app_ids.insert(g.steam_app_id));
+
     Ok(games)
 }
 
@@ -190,6 +222,42 @@ pub fn detect_game_at_path(
         data_path,
         proton_prefix,
     })
+}
+
+// ─── Registry helpers ─────────────────────────────────────────────────────────
+
+/// Query the Wine/Proton system registry for an alternative install path for
+/// `app_id` within `pfx`.
+///
+/// Steam records game install locations in the system registry under:
+/// `HKLM\Software\Valve\Steam\Apps\{app_id}\InstallPath`
+///
+/// This fallback is useful when steamlocate's library manifests are stale or
+/// when the game is installed to a path that was remapped after the manifests
+/// were written.
+///
+/// Returns `None` if:
+/// - The system registry file cannot be read.
+/// - The expected key / value is absent.
+/// - The path string is empty.
+/// - The resolved path does not exist on disk.
+///
+/// # Parameters
+/// - `pfx`: Path to the Proton prefix root (the `pfx/` directory).
+/// - `app_id`: Steam app ID to look up.
+fn find_extra_install_path(pfx: &Path, app_id: u32) -> Option<PathBuf> {
+    let hive = super::registry::load_system_reg(pfx).ok()?;
+
+    let key = format!("Software\\Valve\\Steam\\Apps\\{app_id}");
+    let raw = hive.get_str(&key, "InstallPath")?;
+    if raw.is_empty() {
+        return None;
+    }
+
+    // Wine registry paths use Windows-style backslashes; normalise to forward
+    // slashes for Linux path handling.
+    let path = PathBuf::from(raw.replace('\\', "/"));
+    if path.exists() { Some(path) } else { None }
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
