@@ -1,0 +1,9 @@
+id          = "profile_greeter"
+name        = "Profile Greeter"
+version     = "0.1.0"
+author      = "Your Name"
+description = "Greets you by name whenever you switch profiles."
+
+[capabilities]
+required = []
+optional = []

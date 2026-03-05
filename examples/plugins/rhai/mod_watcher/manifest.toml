@@ -1,0 +1,9 @@
+id          = "mod_watcher"
+name        = "Mod Watcher"
+version     = "0.1.0"
+author      = "Your Name"
+description = "Announces when mods are installed, enabled, or disabled. Also logs conflict changes."
+
+[capabilities]
+required = []
+optional = []

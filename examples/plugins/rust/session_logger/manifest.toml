@@ -1,0 +1,9 @@
+id          = "session_logger"
+name        = "Session Logger"
+version     = "0.1.0"
+author      = "Your Name"
+description = "Writes a plain-text game session log to the plugin data directory."
+
+[capabilities]
+required = []
+optional = []

@@ -1,0 +1,10 @@
+id          = "conflict_notifier"
+name        = "Conflict Notifier"
+version     = "0.1.0"
+author      = "Your Name"
+description = "Posts a UI warning whenever the conflict map changes, listing every affected mod."
+
+# No special capabilities needed — read-only event subscriber.
+[capabilities]
+required = []
+optional = []

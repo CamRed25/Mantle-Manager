@@ -1,0 +1,12 @@
+[package]
+name = "conflict_notifier"
+version = "0.1.0"
+edition = "2021"
+
+# cdylib is required — Mantle Manager loads the plugin as a shared library (.so)
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Path reference for local development; production plugins would use a published crate.
+mantle_core = { path = "../../../../crates/mantle_core" }

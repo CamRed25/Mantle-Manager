@@ -1,0 +1,11 @@
+[package]
+name = "session_logger"
+version = "0.1.0"
+edition = "2021"
+
+# cdylib is required — Mantle Manager loads the plugin as a shared library (.so)
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+mantle_core = { path = "../../../../crates/mantle_core" }
