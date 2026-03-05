@@ -14,11 +14,12 @@ name = "mantle-manager"
 path = "src/main.rs"
 
 [features]
-## Enables SKSE installer: version check + HTTP download via mantle_core's net feature.
-net = ["mantle_core/net"]
+## Enables SKSE installer, Nexus API client, and HTTP mod downloads.
+net = ["mantle_core/net", "dep:mantle_net"]
 
 [dependencies]
 mantle_core = { path = "../mantle_core" }
+mantle_net = { path = "../mantle_net", optional = true }
 gtk4.workspace = true
 libadwaita.workspace = true
 tokio.workspace = true

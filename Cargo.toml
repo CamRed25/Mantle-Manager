@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/mantle_core",
+    "crates/mantle_net",
     "crates/mantle_ui",
 ]
 resolver = "2"

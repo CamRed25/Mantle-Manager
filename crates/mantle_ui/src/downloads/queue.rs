@@ -1,9 +1,9 @@
 /// In-memory download queue: stores [`DownloadJob`] entries and exposes the
 /// CRUD operations called by the downloads page buttons.
 ///
-/// **Scaffolding note** – `enqueue` immediately marks every new job as
-/// `DownloadStatus::Failed("HTTP fetch not yet implemented")`.  Real streaming
-/// downloads will be wired in a later iteration; see `futures.md`.
+/// When compiled with the `net` feature, [`DownloadQueue::enqueue`] spawns a
+/// real HTTP download task via `mantle_net`.  Without `net` every job
+/// immediately fails with a "not implemented" message (scaffolding behaviour).
 use std::{
     collections::VecDeque,
     path::PathBuf,
@@ -19,15 +19,19 @@ use crate::state::{DownloadEntry, DownloadStatus};
 // ---------------------------------------------------------------------------
 
 /// A single item being (or waiting to be) downloaded.
-#[allow(dead_code)] // `url` and `dest` used when HTTP fetch is implemented
+// `url` and `dest` are only read by `spawn_download` (net feature) and retry;
+// without the net feature they appear unused to the linter.
+#[allow(dead_code)]
 pub struct DownloadJob {
     /// Stable UUID – used as a routing key for cancel / retry / clear actions.
     pub id: Uuid,
-    /// Remote URL to fetch (deferred; not used in scaffolding).
+    /// Remote URL to fetch — stored so [`DownloadQueue::retry`] can
+    /// restart the job; also moved into `spawn_download` (net feature).
     pub url: String,
     /// Human-readable mod name shown in the UI.
     pub mod_name: String,
-    /// Filesystem path where the downloaded archive should be written.
+    /// Destination path — stored for retry; passed to `spawn_download`
+    /// (net feature).  Not read by snapshot / cancel paths.
     pub dest: PathBuf,
     /// Current lifecycle status of this download.
     pub status: DownloadStatus,
@@ -43,6 +47,90 @@ pub struct DownloadProgress {
     pub id: Uuid,
     /// New status to apply.
     pub status: DownloadStatus,
+}
+
+// ---------------------------------------------------------------------------
+// Background download task
+// ---------------------------------------------------------------------------
+
+/// Spawn a detached OS thread that downloads `url` to `dest` and reports
+/// progress via `progress_tx`.
+///
+/// A single-threaded Tokio runtime is created per spawn so the async
+/// `mantle_net` functions can be `await`-ed without requiring a shared
+/// runtime.  Status transitions emitted:
+///
+/// `Queued` (caller) → `InProgress{…}` (per chunk) → `Complete{bytes}` | `Failed(msg)`
+///
+/// # Parameters
+/// - `id`          – UUID that identifies the job in the UI queue.
+/// - `url`         – remote HTTPS URL to stream from.
+/// - `dest`        – filesystem path for the finished archive.
+/// - `progress_tx` – channel to send status updates back to the UI thread.
+#[cfg(feature = "net")]
+fn spawn_download(
+    id: Uuid,
+    url: String,
+    dest: std::path::PathBuf,
+    progress_tx: mpsc::Sender<DownloadProgress>,
+) {
+    std::thread::spawn(move || {
+        // Build a single-threaded Tokio runtime for this download.
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio rt for spawn_download");
+
+        // Build the reqwest client; if it fails, immediately mark as failed.
+        let client = match mantle_net::download::build_client() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = progress_tx.send(DownloadProgress {
+                    id,
+                    status: DownloadStatus::Failed(e.to_string()),
+                });
+                return;
+            }
+        };
+
+        // Notify UI that the download is now active.
+        let _ = progress_tx.send(DownloadProgress {
+            id,
+            status: DownloadStatus::InProgress {
+                progress: 0.0,
+                bytes_done: 0,
+                total_bytes: None,
+            },
+        });
+
+        // Stream the file, forwarding chunk-level progress updates.
+        let tx = progress_tx.clone();
+        let result = rt.block_on(mantle_net::download::download_file(
+            &url,
+            &dest,
+            move |ev| {
+                if let mantle_net::download::DownloadEvent::Progress { downloaded, total } = ev {
+                    let progress = total.map_or(0.0, |t| downloaded as f64 / t as f64);
+                    let _ = tx.send(DownloadProgress {
+                        id,
+                        status: DownloadStatus::InProgress {
+                            progress,
+                            bytes_done: downloaded,
+                            total_bytes: total,
+                        },
+                    });
+                }
+            },
+            &client,
+        ));
+
+        // Send the terminal status regardless of success or failure.
+        let final_status = match result {
+            Ok(bytes) => DownloadStatus::Complete { bytes },
+            Err(e) => DownloadStatus::Failed(e.to_string()),
+        };
+        let _ = progress_tx.send(DownloadProgress { id, status: final_status });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -85,35 +173,53 @@ impl DownloadQueue {
 
     /// Add a new download job to the queue and return its stable [`Uuid`].
     ///
-    /// **Scaffolding**: the job is immediately transitioned to
-    /// `DownloadStatus::Failed("HTTP fetch not yet implemented")` rather than
-    /// starting a real network transfer.  A progress update is also sent on
-    /// the channel so the idle loop processes it uniformly.
+    /// With the `net` feature enabled, spawns a background OS thread that
+    /// streams the file from `url` and sends [`DownloadProgress`] updates
+    /// back to the idle-poll loop.  Without `net`, the job immediately
+    /// transitions to `Failed` (scaffolding behaviour).
     ///
     /// # Parameters
-    /// - `url`      – remote URL (unused in scaffolding but stored for later).
+    /// - `url`      – remote HTTPS URL to fetch.
     /// - `mod_name` – human-readable name shown in the UI.
     /// - `dest`     – filesystem path for the downloaded archive.
     ///
     /// # Returns
     /// The [`Uuid`] assigned to the new job.
-    #[allow(dead_code)] // entry point for future HTTP download wiring
-    pub fn enqueue(&mut self, url: impl Into<String>, mod_name: impl Into<String>, dest: PathBuf) -> Uuid {
+    // Will be called from the downloads page once item-14 wires the UI.
+    #[allow(dead_code)]
+    pub fn enqueue(
+        &mut self,
+        url: impl Into<String>,
+        mod_name: impl Into<String>,
+        dest: PathBuf,
+    ) -> Uuid {
         let id = Uuid::new_v4();
-        let status = DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
+        let url = url.into();
+        let mod_name = mod_name.into();
 
+        // Record the job as Queued immediately so the UI reflects it.
         self.jobs.push_back(DownloadJob {
             id,
-            url: url.into(),
-            mod_name: mod_name.into(),
-            dest,
-            status: status.clone(),
+            url: url.clone(),
+            mod_name,
+            dest: dest.clone(),
+            status: DownloadStatus::Queued,
         });
+        let _ = self
+            .progress_tx
+            .send(DownloadProgress { id, status: DownloadStatus::Queued });
 
-        // Push the initial status onto the progress channel so the idle loop
-        // applies it consistently (no-op in scaffolding, but keeps the path
-        // exercised for when real workers are added).
-        let _ = self.progress_tx.send(DownloadProgress { id, status });
+        // ── Real HTTP download (net feature only) ─────────────────────
+        #[cfg(feature = "net")]
+        spawn_download(id, url, dest, self.progress_tx.clone());
+
+        // ── Stub: immediately fail when net feature is absent ─────────
+        #[cfg(not(feature = "net"))]
+        {
+            let status =
+                DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
+            let _ = self.progress_tx.send(DownloadProgress { id, status });
+        }
 
         id
     }
@@ -160,9 +266,25 @@ impl DownloadQueue {
         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == id) {
             match job.status {
                 DownloadStatus::Failed(_) | DownloadStatus::Cancelled => {
-                    job.status = DownloadStatus::Failed(
-                        "HTTP fetch not yet implemented".to_string(),
+                    job.status = DownloadStatus::Queued;
+                    let _ = self
+                        .progress_tx
+                        .send(DownloadProgress { id, status: DownloadStatus::Queued });
+
+                    #[cfg(feature = "net")]
+                    spawn_download(
+                        id,
+                        job.url.clone(),
+                        job.dest.clone(),
+                        self.progress_tx.clone(),
                     );
+
+                    #[cfg(not(feature = "net"))]
+                    {
+                        let status =
+                            DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
+                        let _ = self.progress_tx.send(DownloadProgress { id, status });
+                    }
                 }
                 _ => {}
             }
