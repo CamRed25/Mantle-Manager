@@ -11,6 +11,8 @@ A ground-up Linux-native mod manager for Bethesda games running through Steam an
 
 ## Screenshots
 
+> **Note:** Screenshots were taken early in development and do not reflect the current state of the UI.
+
 | Overview | Mods |
 |---|---|
 | ![Overview](photos/Overview_menu.png) | ![Mods](photos/Mods_menu.png) |
@@ -40,6 +42,10 @@ A ground-up Linux-native mod manager for Bethesda games running through Steam an
 - **Steam/Proton integration** — game discovery via `steamlocate`, Proton prefix awareness.
 - **Multi-game** — Skyrim LE/SE/VR, Enderal SE, Fallout 4, Fallout NV, Fallout 3, Oblivion, Starfield.
 - **Flatpak-first** — designed to run inside the Flatpak sandbox.
+- **Theming** — user-installable CSS themes via `~/.local/share/mantle-manager/themes/`. Built-in palettes: Catppuccin Mocha, Catppuccin Latte, Nord, Skyrim, Fallout. Optional `theme.toml` manifests for display name, author, and dark/light hint.
+- **Live profile switching** — overview profile-switcher popover activates profiles directly from the main page without navigating away.
+- **Mod version tracking** — mod version strings stored in the database and displayed in the mod list and overview.
+- **First-run onboarding** — automatically creates a Default profile on first launch so the app is immediately usable.
 
 ---
 
@@ -158,6 +164,7 @@ The heart of the application. All business logic lives here — the UI crate is 
 | `game/` | Game detection (`steamlocate`), game kind registry, Proton prefix discovery |
 | `data/` | SQLite persistence, profile management, mod metadata |
 | `plugin/` | Native `.so` plugin loader, Rhai scripting engine, event bus |
+| `theme/` | User-installable CSS theme discovery — scans `{data_dir}/themes/`, reads `.css` + optional `.toml` manifests |
 
 ### `mantle_ui`
 
