@@ -1,0 +1,17 @@
+[Desktop Entry]
+Name=Mantle Manager
+GenericName=Mod Manager
+Comment=Mod manager for Bethesda games on Linux
+Exec=mantle-manager %U
+Icon=io.github.mantle_manager.MantleManager
+Terminal=false
+Type=Application
+Categories=Game;Utility;
+MimeType=x-scheme-handler/nxm;
+Keywords=mod;mods;Skyrim;Fallout;Bethesda;
+
+# Register as a handler for nxm:// URIs so that "Download with Mod Manager"
+# buttons on Nexus Mods launch the app directly.
+[Desktop Action download-nxm]
+Name=Download from Nexus Mods
+Exec=mantle-manager %u

@@ -1,0 +1,75 @@
+app-id: io.github.mantle_manager.MantleManager
+runtime: org.gnome.Platform
+runtime-version: "47"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+
+command: mantle-manager
+
+# Build-time environment
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/mantle-manager/cargo
+    RUST_BACKTRACE: "1"
+
+finish-args:
+  # Display access (prefer Wayland, fall back to X11)
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+
+  # D-Bus access — required for Steam integration and desktop notification
+  - --socket=session-bus
+  - --socket=system-bus
+
+  # Filesystem — user's home for mod directories, Steam library discovery
+  - --filesystem=home
+
+  # Allow reading the Steam installation; write not required for basic use
+  - --filesystem=~/.steam:ro
+  - --filesystem=~/.local/share/Steam:ro
+
+  # Network access for Nexus Mods API and mod downloads (net feature)
+  - --share=network
+
+  # IPC — required for clipboard and some GTK4 features
+  - --share=ipc
+
+  # Steam socket for launching games via steam:// URIs
+  - --talk-name=com.valvesoftware.Steam
+
+  # Allow the NXM deep-link handler to receive URI open requests
+  - --talk-name=org.freedesktop.Application
+
+modules:
+  - name: mantle-manager
+    buildsystem: simple
+    build-commands:
+      # Build the release binary with the net feature enabled
+      - cargo build --release --features net --manifest-path Cargo.toml
+      - install -Dm755 target/release/mantle-manager /app/bin/mantle-manager
+
+      # Install desktop integration assets
+      - install -Dm644
+          assets/io.github.mantle_manager.MantleManager.desktop
+          /app/share/applications/io.github.mantle_manager.MantleManager.desktop
+      - install -Dm644
+          assets/io.github.mantle_manager.MantleManager.svg
+          /app/share/icons/hicolor/scalable/apps/io.github.mantle_manager.MantleManager.svg
+      - install -Dm644
+          assets/io.github.mantle_manager.MantleManager.appdata.xml
+          /app/share/metainfo/io.github.mantle_manager.MantleManager.appdata.xml
+
+    sources:
+      - type: dir
+        path: ..
+
+    # Cache cargo registry between builds (speeds up incremental builds)
+    build-options:
+      env:
+        CARGO_HOME: /run/build/mantle-manager/cargo
+
+  # libarchive — pulled in by compress-tools; must be present in the sandbox
+  # The GNOME 47 runtime includes libarchive, so no explicit module needed.

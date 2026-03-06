@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Mantle Manager — application icon (placeholder)
+
+  This is a temporary vector placeholder.  Replace with proper artwork before
+  publishing to Flathub.  The current design is a stylised mountain silhouette
+  with a layered arch (representing "mantle layers").
+
+  Palette:
+    Primary:   #4A90D9 (blue-grey — calm, technical)
+    Secondary: #2C5282 (darker blue for depth)
+    Accent:    #63B3ED (light blue highlight)
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 128 128" width="128" height="128"
+     role="img" aria-label="Mantle Manager">
+
+  <!-- Background circle -->
+  <circle cx="64" cy="64" r="60" fill="#1A2744"/>
+
+  <!-- Mountain silhouette (upper half) -->
+  <polygon
+    points="64,20 28,85 100,85"
+    fill="#4A90D9"
+    opacity="0.9"/>
+
+  <!-- Second peak (offset) giving a layered / mantle feel -->
+  <polygon
+    points="92,40 68,85 116,85"
+    fill="#2C5282"
+    opacity="0.85"/>
+
+  <!-- Base ground / mantle layer -->
+  <rect x="20" y="82" width="88" height="12" rx="2"
+        fill="#63B3ED" opacity="0.7"/>
+
+  <!-- Subtle arc representing layers/strata -->
+  <path d="M 24 90 Q 64 72 104 90"
+        stroke="#A3BFFA" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 30 96 Q 64 82 98 96"
+        stroke="#A3BFFA" stroke-width="1.5" fill="none" opacity="0.4"/>
+
+  <!-- Snow cap highlight -->
+  <polygon
+    points="64,20 56,38 72,38"
+    fill="#EBF8FF" opacity="0.9"/>
+</svg>

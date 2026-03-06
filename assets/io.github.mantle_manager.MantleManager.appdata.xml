@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for Mantle Manager.
+     Validate with: appstream-util validate assets/*.appdata.xml
+     AppStream spec: https://www.freedesktop.org/software/appstream/docs/
+-->
+<component type="desktop-application">
+  <id>io.github.mantle_manager.MantleManager</id>
+
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <developer id="io.github.mantle_manager">
+    <name>Mantle Manager Contributors</name>
+  </developer>
+
+  <name>Mantle Manager</name>
+  <summary>Mod manager for Bethesda games on Linux</summary>
+
+  <description>
+    <p>
+      Mantle Manager is a native Linux mod manager built for Bethesda's RPG
+      catalogue — Skyrim (LE, SE, VR), Fallout (3, NV, 4), Oblivion, Morrowind,
+      Starfield, and Enderal.
+    </p>
+    <p>
+      It provides a conflict-aware mod list, non-destructive VFS overlays
+      (kernel overlayfs, fuse-overlayfs, or symlink-farm), per-profile INI
+      management, and direct Nexus Mods integration with one-click downloads
+      via the <code>nxm://</code> handler.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Drag-and-drop priority ordering with conflict detection</li>
+      <li>Profile system — separate mod lists, load orders, and INI settings per profile</li>
+      <li>VFS overlay — zero-copy mod staging, fully reversible</li>
+      <li>Nexus Mods download queue with nxm:// browser integration</li>
+      <li>Plugin system — Lua-style Rhai scripts and native .so extensions</li>
+      <li>User-installable CSS themes</li>
+      <li>Script Extender (SKSE, F4SE, …) detection and launch</li>
+    </ul>
+  </description>
+
+  <url type="homepage">https://github.com/mantle-manager/mantle-manager</url>
+  <url type="bugtracker">https://github.com/mantle-manager/mantle-manager/issues</url>
+
+  <launchable type="desktop-id">io.github.mantle_manager.MantleManager.desktop</launchable>
+
+  <provides>
+    <binary>mantle-manager</binary>
+    <!-- NXM deep-link handler: "Download with Mod Manager" on Nexus Mods -->
+    <mediatype>x-scheme-handler/nxm</mediatype>
+  </provides>
+
+  <categories>
+    <category>Game</category>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>mod</keyword>
+    <keyword>mods</keyword>
+    <keyword>Skyrim</keyword>
+    <keyword>Fallout</keyword>
+    <keyword>Bethesda</keyword>
+    <keyword>Nexus</keyword>
+  </keywords>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Overview tab showing detected game and quick stats</caption>
+      <!-- Replace with an actual screenshot URL before publishing to Flathub -->
+      <image type="source">
+        https://raw.githubusercontent.com/mantle-manager/mantle-manager/master/screenshots/overview.png
+      </image>
+    </screenshot>
+  </screenshots>
+
+  <releases>
+    <release version="0.1.0-alpha" date="2025-01-01">
+      <description>
+        <p>First public alpha release of Mantle Manager.</p>
+        <ul>
+          <li>GTK4 + libadwaita UI with five-tab layout (Overview, Mods, Plugins, Downloads, Profiles)</li>
+          <li>Mod list with priority ordering and file-level conflict detection</li>
+          <li>Non-destructive VFS overlay using kernel overlayfs / fuse-overlayfs / symlink-farm</li>
+          <li>Profile CRUD with per-profile INI management</li>
+          <li>Plugin system with native .so and Rhai scripting support</li>
+          <li>User-installable CSS themes</li>
+          <li>Nexus Mods API integration — nxm:// handler and download queue</li>
+          <li>Script Extender detection (SKSE, F4SE) and auto-launch</li>
+          <li>ACF + PE version detection for installed games</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <!-- OARS content rating — this app manages game mods, no objectionable content of its own -->
+  <content_rating type="oars-1.1"/>
+</component>
