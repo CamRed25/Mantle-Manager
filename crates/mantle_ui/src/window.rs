@@ -264,6 +264,21 @@ pub fn build_ui(app: &adw::Application) {
     #[cfg(feature = "net")]
     wire_skse_button(&skse_btn, &game_kind_shared, &game_data_path_shared, &toast_overlay);
 
+    // ── Ensure process exits when the window is closed ───────────────────
+    // The background state-worker thread blocks indefinitely on EventBus
+    // notifications and has no cancellation channel, so it would keep
+    // the process alive after the window closes.  Calling app.quit() here
+    // exits the GTK main loop immediately; std::process::exit in main()
+    // then terminates all threads.
+    window.connect_close_request(glib::clone!(
+        @weak app =>
+        @default-return glib::Propagation::Proceed,
+        move |_| {
+            app.quit();
+            glib::Propagation::Stop
+        }
+    ));
+
     window.present();
 
     // ── Background state loader ───────────────────────────────────────────
