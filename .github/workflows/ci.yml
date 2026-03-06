@@ -35,7 +35,8 @@ jobs:
             libadwaita-1-dev \
             libarchive-dev \
             fuse-overlayfs \
-            libssl-dev
+            libssl-dev \
+            docker.io
 
       - name: Install Rust ${{ matrix.toolchain }} toolchain
         uses: dtolnay/rust-toolchain@master
