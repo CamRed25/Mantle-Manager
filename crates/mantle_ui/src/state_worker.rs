@@ -29,16 +29,14 @@ use std::sync::{mpsc::Sender, Arc, Condvar, Mutex, OnceLock};
 
 use mantle_core::{
     config::{default_db_path, AppSettings},
-    data::{
-        profiles::{self, InsertProfile},
-        Database,
-    },
+    data::Database,
     game, mod_list,
     plugin::{EventBus, EventFilter},
+    service::AppServices,
     vfs,
 };
 
-use crate::state::{AppState, DownloadEntry, DownloadStatus, ModEntry, PluginEntry, ProfileEntry, ThemeEntry};
+use crate::state::{AppState, DiagnosticEntry, DiagnosticSeverity, DownloadEntry, DownloadStatus, ModEntry, PluginEntry, ProfileEntry, ThemeEntry};
 
 // ─── Cached game detection ───────────────────────────────────────────────────
 
@@ -60,6 +58,130 @@ fn load_game_state() -> Option<&'static mantle_core::game::GameInfo> {
     CACHED_GAME
         .get_or_init(|| game::detect_all_steam().unwrap_or_default().into_iter().next())
         .as_ref()
+}
+
+// ─── Diagnostic loader ───────────────────────────────────────────────────────
+
+/// Run all post-session diagnostic scans and return a list of [`DiagnosticEntry`] items
+/// to surface on the Overview page.
+///
+/// Currently covers:
+/// - **Cosave** (`A3`): warns when SE is installed but save files are missing their cosave.
+/// - **Overwrite** (`A4`): informs when temporary files have accumulated in the
+///   `{data_dir}/overwrite/` directory after a previous launch session.
+///
+/// # Parameters
+/// - `game`: Detected game info, used to derive the saves directory from the Proton prefix.
+/// - `settings`: Application settings, providing the mods directory path.
+///
+/// # Returns
+/// A `Vec<DiagnosticEntry>`, warnings first, infos after.
+/// Empty when no game is detected or all checks pass.
+fn load_diagnostics(
+    game: Option<&mantle_core::game::GameInfo>,
+    settings: &mantle_core::config::AppSettings,
+) -> Vec<DiagnosticEntry> {
+    use mantle_core::{
+        config::data_dir,
+        diag::{self, cosave_config_for},
+        game::GameKind,
+    };
+    use std::path::PathBuf;
+
+    let mut entries: Vec<DiagnosticEntry> = Vec::new();
+
+    // ── Cosave scan (A3) ────────────────────────────────────────────────────
+    // Only runs when:
+    // 1. A game has been detected.
+    // 2. The game has a supported script extender.
+    // 3. A mods directory is configured.
+    // 4. A Proton prefix exists so we can locate the Bethesda saves folder.
+    if let Some(game) = game {
+        if let Some(cosave_cfg) = cosave_config_for(game.kind) {
+            // Derive saves path from Proton prefix. Bethesda games store saves at:
+            // `{proton_prefix}/drive_c/users/steamuser/Documents/My Games/{subdir}/Saves`
+            let saves_subdir: Option<&str> = match game.kind {
+                GameKind::SkyrimLE  => Some("Skyrim"),
+                GameKind::SkyrimSE
+                | GameKind::SkyrimVR => Some("Skyrim Special Edition"),
+                GameKind::EnderalSE  => Some("Enderal Special Edition"),
+                GameKind::Oblivion   => Some("Oblivion"),
+                GameKind::Fallout3   => Some("Fallout3"),
+                GameKind::FalloutNV  => Some("FalloutNV"),
+                GameKind::Fallout4   => Some("Fallout4"),
+                GameKind::Starfield  => Some("Starfield"),
+                GameKind::Morrowind  => None, // no SE
+            };
+
+            if let (Some(prefix), Some(subdir)) = (&game.proton_prefix, saves_subdir) {
+                let saves_dir: PathBuf = prefix
+                    .join("drive_c/users/steamuser/Documents/My Games")
+                    .join(subdir)
+                    .join("Saves");
+
+                if let Some(mods_dir) = &settings.paths.mods_dir {
+                    let result = diag::scan_missing_cosaves(
+                        &saves_dir,
+                        mods_dir,
+                        &cosave_cfg,
+                    );
+                    if result.se_detected && !result.is_ok() {
+                        let count = result.missing_cosaves.len();
+                        entries.push(DiagnosticEntry {
+                            title: format!(
+                                "{count} save file{} missing cosave — game may have been launched without the script extender",
+                                if count == 1 { "" } else { "s" },
+                            ),
+                            detail: Some(
+                                "Launch the game through Mantle Manager to ensure the script \
+                                 extender is active and cosaves are written correctly."
+                                    .to_string(),
+                            ),
+                            severity: DiagnosticSeverity::Warning,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Overwrite scan (A4) ─────────────────────────────────────────────────
+    // Check the persistent overwrite directory for loose files left behind by
+    // a previous launch session.  The path is fixed at `{data_dir}/overwrite/`
+    // regardless of active profile.
+    let overwrite_dir = data_dir().join("overwrite");
+    if overwrite_dir.exists() {
+        let result = diag::scan_overwrite(&overwrite_dir);
+        if !result.is_empty() {
+            let non_empty: Vec<&str> = result.non_empty_categories();
+            let summary = if non_empty.is_empty() {
+                format!("{} file{} in the overwrite directory", result.total_files(), if result.total_files() == 1 { "" } else { "s" })
+            } else {
+                format!(
+                    "{} file{} in overwrite ({})",
+                    result.total_files(),
+                    if result.total_files() == 1 { "" } else { "s" },
+                    non_empty.join(", "),
+                )
+            };
+            entries.push(DiagnosticEntry {
+                title: summary,
+                detail: Some(
+                    "Files written to the overwrite directory during the last session. \
+                     Consider moving them into a dedicated mod or cleaning them up."
+                        .to_string(),
+                ),
+                severity: DiagnosticSeverity::Info,
+            });
+        }
+    }
+
+    // Warnings before infos for visual priority.
+    entries.sort_by_key(|e| match e.severity {
+        DiagnosticSeverity::Warning => 0_u8,
+        DiagnosticSeverity::Info => 1_u8,
+    });
+    entries
 }
 
 // ─── Cached plugin entries ───────────────────────────────────────────────────
@@ -110,7 +232,12 @@ enum RefreshScope {
 /// # Parameters
 /// - `sender`: The sending end of a `std::sync::mpsc::channel::<AppState>`.
 pub fn trigger_reload(sender: Sender<AppState>) {
-    std::thread::spawn(move || resend_state(RefreshScope::Full, &sender));
+    std::thread::spawn(move || {
+        match open_services() {
+            Ok(services) => resend_state(&services, RefreshScope::Full, &sender),
+            Err(e) => tracing::warn!("trigger_reload: failed to open DB — {e}"),
+        }
+    });
 }
 
 /// Spawn a background OS thread that loads the initial [`AppState`] from
@@ -141,37 +268,50 @@ pub fn trigger_reload(sender: Sender<AppState>) {
 /// [`SubscriptionHandle`]: mantle_core::plugin::SubscriptionHandle
 pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
     std::thread::spawn(move || {
+        // ── Open DB once for this thread ──────────────────────────────────
+        let services = match open_services() {
+            Ok(s) => Arc::new(s),
+            Err(e) => {
+                tracing::error!("state_worker: failed to open DB — {e}");
+                return;
+            }
+        };
+
         // ── Initial state load ────────────────────────────────────────────
-        resend_state(RefreshScope::Full, &sender);
+        resend_state(&services, RefreshScope::Full, &sender);
 
         // ── Subscribe to live events ──────────────────────────────────────
-        // Each handler clones the sender and calls resend_state.
-        // The SubscriptionHandle variables must be kept alive — dropping them
+        // Each handler clones sender + Arc<AppServices> and calls resend_state.
+        // SubscriptionHandle variables must be kept alive — dropping them
         // would immediately unsubscribe.
         let s1 = sender.clone();
+        let svc1 = Arc::clone(&services);
         let _sub_mod_installed =
             EventBus::subscribe(&event_bus, EventFilter::ModInstalled, move |_| {
-                resend_state(RefreshScope::Full, &s1);
+                resend_state(&svc1, RefreshScope::Full, &s1);
             });
 
         let s2 = sender.clone();
+        let svc2 = Arc::clone(&services);
         let _sub_mod_enabled =
             EventBus::subscribe(&event_bus, EventFilter::ModEnabled, move |_| {
                 // Only mod-enabled flags changed — skip plugin registry reload.
-                resend_state(RefreshScope::ModsOnly, &s2);
+                resend_state(&svc2, RefreshScope::ModsOnly, &s2);
             });
 
         let s3 = sender.clone();
+        let svc3 = Arc::clone(&services);
         let _sub_mod_disabled =
             EventBus::subscribe(&event_bus, EventFilter::ModDisabled, move |_| {
                 // Only mod-enabled flags changed — skip plugin registry reload.
-                resend_state(RefreshScope::ModsOnly, &s3);
+                resend_state(&svc3, RefreshScope::ModsOnly, &s3);
             });
 
         let s4 = sender.clone();
+        let svc4 = Arc::clone(&services);
         let _sub_profile_changed =
             EventBus::subscribe(&event_bus, EventFilter::ProfileChanged, move |_| {
-                resend_state(RefreshScope::Full, &s4);
+                resend_state(&svc4, RefreshScope::Full, &s4);
             });
 
         // ── Keep thread alive ─────────────────────────────────────────────
@@ -187,6 +327,20 @@ pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
 
 // ─── Private implementation ───────────────────────────────────────────────────
 
+/// Open (or create) the application database, run migrations, and return an
+/// [`AppServices`] handle.
+///
+/// This is a synchronous, blocking operation — call it from an OS thread, not
+/// from within an async executor.
+fn open_services() -> anyhow::Result<AppServices> {
+    let db_path = default_db_path();
+    if let Some(parent) = db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let db = Database::open(&db_path)?;
+    Ok(AppServices::new(db))
+}
+
 /// Re-run [`load_state`] with the given `scope` and send the result over `sender`.
 ///
 /// Called both for the initial delivery (inside [`spawn`]) and from every
@@ -197,10 +351,11 @@ pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
 /// even if a transient DB read fails.
 ///
 /// # Parameters
-/// - `scope`:  Which sub-loaders to run (see [`RefreshScope`]).
-/// - `sender`: The sending end of the state MPSC channel.
-fn resend_state(scope: RefreshScope, sender: &Sender<AppState>) {
-    match load_state(scope) {
+/// - `services`: Application service handle (owns the open DB connection).
+/// - `scope`:    Which sub-loaders to run (see [`RefreshScope`]).
+/// - `sender`:   The sending end of the state MPSC channel.
+fn resend_state(services: &AppServices, scope: RefreshScope, sender: &Sender<AppState>) {
+    match load_state(services, scope) {
         Ok(state) => {
             if sender.send(state).is_err() {
                 tracing::warn!("state_worker: receiver dropped; state delivery skipped");
@@ -214,9 +369,9 @@ fn resend_state(scope: RefreshScope, sender: &Sender<AppState>) {
 
 /// Load an [`AppState`] snapshot from the database and config files.
 ///
-/// Opens (or creates) the `SQLite` database, reads all profiles, then loads
-/// the active profile's mod list.  Returns an error only if a critical read
-/// fails; absent files (first launch) produce an empty but valid state.
+/// Uses the provided `services` handle (which owns the open DB) to read
+/// profiles and mod data.  Returns an error only if a critical read fails;
+/// absent files (first launch) produce an empty but valid state.
 ///
 /// On [`RefreshScope::ModsOnly`] the plugin registry is not re-scanned;
 /// cached entries from the last [`RefreshScope::Full`] run are reused instead
@@ -227,17 +382,10 @@ fn resend_state(scope: RefreshScope, sender: &Sender<AppState>) {
 /// Populated [`AppState`] on success.
 ///
 /// # Errors
-/// Returns an error if the database cannot be opened or schema migrations
-/// fail.  Individual query errors are treated as empty results rather than
+/// Individual query errors are treated as empty results rather than
 /// propagated, to keep the UI functional even with partial DB corruption.
-fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
-    // ── Database ──────────────────────────────────────────────────────────
-    let db_path = default_db_path();
-    if let Some(parent) = db_path.parent() {
-        // Create data directory on first launch (no-op if it already exists).
-        std::fs::create_dir_all(parent)?;
-    }
-    let db = Database::open(&db_path)?;
+fn load_state(services: &AppServices, scope: RefreshScope) -> anyhow::Result<AppState> {
+    let db = &services.db;
 
     // ── Config (for future game detection — currently unused here) ────────
     // AppSettings::load_or_default is called at startup for theme only.
@@ -252,30 +400,18 @@ fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
     // profile and make it active so the rest of load_state() always has
     // something to work with, and the UI can show the mods page immediately
     // rather than a perpetual empty state.
-    let first_run = db.with_conn(profiles::list_profiles)?.is_empty();
-    if first_run {
-        tracing::info!("state_worker: no profiles found — creating Default profile");
-        let default_id = db.with_conn(|conn| {
-            profiles::insert_profile(
-                conn,
-                &InsertProfile {
-                    name: "Default",
-                    game_slug: None,
-                },
-            )
-        })?;
-        db.with_conn(|conn| profiles::set_active_profile(conn, default_id))?;
-    }
+    let profile_svc = services.profile();
+    profile_svc.ensure_default()?;
 
-    let all_profiles = db.with_conn(profiles::list_profiles)?;
-    let active = db.with_conn(profiles::get_active_profile)?;
+    let all_profiles = profile_svc.list()?;
+    let active = profile_svc.active()?;
 
     let active_profile_name = active.as_ref().map_or_else(String::new, |p| p.name.clone());
     let active_profile_id = active.as_ref().map(|p| p.id);
 
     // Batch-query mod counts for all profiles in one round-trip so the
     // sidebar can show "{n} mods" next to each profile without N extra queries.
-    let profile_mod_counts = db.with_conn(mod_list::mod_counts_per_profile).unwrap_or_default();
+    let profile_mod_counts = profile_svc.mod_counts().unwrap_or_default();
 
     let profile_entries: Vec<ProfileEntry> = all_profiles
         .iter()
@@ -289,7 +425,7 @@ fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
 
     // ── Active profile mod list + conflict scan ───────────────────────────
     let (mod_entries, mod_count, conflict_count) = if let Some(pid) = active_profile_id {
-        build_mod_list_with_conflicts(&db, pid)?
+        build_mod_list_with_conflicts(db, pid)?
     } else {
         (vec![], 0_usize, 0_usize)
     };
@@ -325,7 +461,7 @@ fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
     let (plugin_entries, plugin_count) = match scope {
         RefreshScope::Full => {
             let result =
-                load_plugins(&db, active_profile_id, &active_profile_name, &profile_names, first_game);
+                load_plugins(db, active_profile_id, &active_profile_name, &profile_names, first_game);
             // Persist result for future ModsOnly refreshes.
             if let Ok(mut cache) = plugin_cache().lock() {
                 *cache = result.clone();
@@ -356,11 +492,14 @@ fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
         profiles: profile_entries,
         // Load active (non-completed) downloads from the DB so the UI
         // displays their last-known status from the previous session.
-        downloads: load_downloads_snapshot(&db),
+        downloads: load_downloads_snapshot(db),
         plugins: plugin_entries,
         themes: load_themes(&settings.ui.theme),
         // Data directory used as the VFS merge_dir target during launch mount.
         game_data_path: first_game.as_ref().map(|g| g.data_path.clone()),
+        // Diagnostic notices: cosave check (A3) + overwrite accumulation (A4).
+        // Only populated on Full refresh; ModsOnly reuses state already in the UI.
+        diagnostics: load_diagnostics(first_game, &settings),
     })
 }
 /// Load the active profile's mod list, run the file-level conflict scan, and

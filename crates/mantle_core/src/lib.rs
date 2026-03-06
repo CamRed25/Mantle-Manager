@@ -18,6 +18,7 @@
 //! ├── plugin   — Extension/scripting system (PluginContext, EventBus, Rhai)
 //! ├── profile  — Profile CRUD and activation
 //! ├── secrets  — OS secret store integration (Nexus API key via GNOME Keyring/KWallet)
+//! ├── service  — Application service layer (ProfileService, ModService)
 //! ├── skse     — Script extender installer (requires `net` feature)
 //! ├── theme    — User-installable theme discovery (scan {data_dir}/themes/)
 //! ├── vfs      — Virtual filesystem backend (overlayfs / fuse / symlink)
@@ -36,6 +37,7 @@ pub mod mod_list;
 pub mod plugin;
 pub mod profile;
 pub mod secrets;
+pub mod service;
 #[cfg(feature = "net")]
 pub mod skse;
 pub mod theme;

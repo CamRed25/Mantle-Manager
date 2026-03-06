@@ -27,7 +27,7 @@ use libadwaita as adw;
 use mantle_core;
 
 use crate::pages::shared::with_db;
-use crate::state::{AppState, ModEntry, ProfileEntry};
+use crate::state::{AppState, DiagnosticEntry, DiagnosticSeverity, ModEntry, ProfileEntry};
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -83,6 +83,12 @@ pub fn build(
 
     if state.conflict_count > 0 {
         content.append(&conflict_banner(state, Rc::clone(&navigate_to_mods)));
+    }
+
+    if !state.diagnostics.is_empty() {
+        for banner in diag_banners(&state.diagnostics) {
+            content.append(&banner);
+        }
     }
 
     content.append(&mod_list_section(state, navigate_to_mods, refresh));
@@ -373,6 +379,46 @@ fn conflict_banner(state: &AppState, navigate_to_mods: Rc<dyn Fn()>) -> adw::Ban
         .revealed(true)
         .build();
     banner.connect_button_clicked(move |_| navigate_to_mods());
+    banner
+}
+
+// ─── Diagnostic banners ─────────────────────────────────────────────────────
+
+/// Build one [`adw::Banner`] per diagnostic entry, warnings first.
+///
+/// Each banner uses:
+/// - `"warning"` CSS class for [`DiagnosticSeverity::Warning`].
+/// - `"accent"` CSS class for [`DiagnosticSeverity::Info`].
+/// - Tooltip set to `entry.detail` when present.
+///
+/// # Parameters
+/// - `entries`: Ordered slice of entries (pre-sorted by `state_worker`).
+///
+/// # Returns
+/// A `Vec<adw::Banner>` — one element per entry, may be appended to any container.
+fn diag_banners(entries: &[DiagnosticEntry]) -> Vec<adw::Banner> {
+    entries.iter().map(diag_banner).collect()
+}
+
+/// Build a single [`adw::Banner`] for one [`DiagnosticEntry`].
+///
+/// # Parameters
+/// - `entry`: The diagnostic to render.
+fn diag_banner(entry: &DiagnosticEntry) -> adw::Banner {
+    let banner = adw::Banner::builder()
+        .title(&entry.title)
+        .revealed(true)
+        .build();
+
+    match entry.severity {
+        DiagnosticSeverity::Warning => banner.add_css_class("warning"),
+        DiagnosticSeverity::Info    => banner.add_css_class("accent"),
+    }
+
+    if let Some(detail) = &entry.detail {
+        banner.set_tooltip_text(Some(detail.as_str()));
+    }
+
     banner
 }
 

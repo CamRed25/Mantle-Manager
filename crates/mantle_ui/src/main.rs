@@ -10,9 +10,13 @@ use adw::prelude::*;
 use libadwaita as adw;
 
 mod downloads;
+mod install_dialog;
+mod launch;
 mod pages;
 mod settings;
 mod sidebar;
+#[cfg(feature = "net")]
+mod skse;
 mod state;
 mod state_worker;
 mod window;

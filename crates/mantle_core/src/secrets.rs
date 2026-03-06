@@ -16,20 +16,16 @@
 //! Do **not** call these functions from within an async context — use
 //! `tokio::task::spawn_blocking` if you need them from async code.
 
-use crate::error::MantleError;
-
-/// Flatpak app ID — used as the keyring service name.
-const SERVICE: &str = "io.mantlemanager.MantleManager";
-/// Keyring account name for the Nexus Mods API key.
-const NEXUS_KEY_ACCOUNT: &str = "nexus-api-key";
-
 // ---------------------------------------------------------------------------
 // Feature-enabled implementation
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "secrets")]
 mod real {
-    use super::{NEXUS_KEY_ACCOUNT, SERVICE};
+    /// Flatpak app ID — used as the keyring service name.
+    const SERVICE: &str = "io.mantlemanager.MantleManager";
+    /// Keyring account name for the Nexus Mods API key.
+    const NEXUS_KEY_ACCOUNT: &str = "nexus-api-key";
     use crate::error::MantleError;
 
     fn entry() -> Result<keyring::Entry, MantleError> {

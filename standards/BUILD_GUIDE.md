@@ -33,6 +33,7 @@ These C libraries must be present on the build host. They are linked at compile 
 | libloot | Build from source | Build from source | AUR: `libloot` | Plugin sorting |
 | fuse3 | `fuse3-devel` | `libfuse3-dev` | `fuse3` | FUSE backend |
 | sqlite3 | `sqlite-devel` | `libsqlite3-dev` | `sqlite` | rusqlite bundled feature bypasses this |
+| dbus-1 | `dbus-devel` | `libdbus-1-dev` | `dbus` | `secrets` feature (OS keyring); skip with `--no-default-features` |
 | pkg-config | `pkgconf` | `pkg-config` | `pkgconf` | Required by build.rs files |
 
 **SQLite note:** `rusqlite` can bundle its own SQLite via the `bundled` feature flag, which avoids the system dependency. Use `bundled` for Flatpak builds. Use the system library for development builds.

@@ -16,9 +16,13 @@ path = "src/main.rs"
 [features]
 ## Enables SKSE installer, Nexus API client, and HTTP mod downloads.
 net = ["mantle_core/net", "dep:mantle_net"]
+## Stores the Nexus Mods API key in the OS secret store (GNOME Keyring / KWallet).
+## Forwards to mantle_core's secrets feature. Default-on; disable for CI without D-Bus.
+default = ["secrets"]
+secrets = ["mantle_core/secrets"]
 
 [dependencies]
-mantle_core = { path = "../mantle_core" }
+mantle_core = { path = "../mantle_core", default-features = false }
 mantle_net = { path = "../mantle_net", optional = true }
 gtk4.workspace = true
 libadwaita.workspace = true

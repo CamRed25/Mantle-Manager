@@ -36,6 +36,11 @@ pub struct AppState {
     /// Used as the VFS `merge_dir` target when mounting mods before launch.
     /// `None` when no game was detected.
     pub game_data_path: Option<PathBuf>,
+    /// Diagnostic notices populated after each `Full` state refresh.
+    ///
+    /// Rendered as [`adw::Banner`] widgets on the Overview page.
+    /// Empty when no game is detected or all checks pass.
+    pub diagnostics: Vec<DiagnosticEntry>,
 }
 
 pub struct ModEntry {
@@ -157,6 +162,31 @@ pub struct PluginEntry {
     pub settings: Vec<PluginSettingEntry>,
 }
 
+// ─── Diagnostic types ────────────────────────────────────────────────────────
+
+/// Severity level of an in-app diagnostic notice displayed on the Overview page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    /// Informational — no immediate action required.
+    Info,
+    /// Warning — user attention recommended; highlighted in the banner.
+    Warning,
+}
+
+/// A single diagnostic item surfaced on the Overview page as an [`adw::Banner`].
+///
+/// Populated by `state_worker::load_diagnostics()` on every `Full` refresh.
+/// The UI renders one banner per entry, ordered by severity (warnings first).
+#[derive(Debug, Clone)]
+pub struct DiagnosticEntry {
+    /// Short title shown as the banner text.
+    pub title: String,
+    /// Optional longer explanation shown as a tooltip on the banner.
+    pub detail: Option<String>,
+    /// Visual severity applied to the [`adw::Banner`] CSS styling.
+    pub severity: DiagnosticSeverity,
+}
+
 impl AppState {
     /// Minimal placeholder shown for the brief window between startup and the
     /// first live [`AppState`] delivery from `state_worker`.
@@ -183,6 +213,7 @@ impl AppState {
             themes: vec![],
             game_data_path: None,
             plugins: vec![],
+            diagnostics: vec![],
         }
     }
 }
