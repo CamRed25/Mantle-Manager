@@ -358,7 +358,8 @@ pub async fn resolve_nxm(nxm_url: &str, api_key: &str) -> Result<String, NetErro
     }
     if let Some(exp) = params.expires {
         url.push(sep);
-        url.push_str(&format!("expires={exp}"));
+        url.push_str("expires=");
+        url.push_str(&exp.to_string());
     }
 
     let links: Vec<models::DownloadLink> = client.get_json(&url).await?;

@@ -146,13 +146,13 @@ fn pe_version(install_path: &Path, app_id: u32) -> Option<String> {
 
     // Safely read the four bytes for each DWORD in little-endian order.
     let _struc_ver = read_u32_le(&bytes, base);
-    let file_ver_ms = read_u32_le(&bytes, base + 4);
-    let file_ver_ls = read_u32_le(&bytes, base + 8);
+    let file_ver_high = read_u32_le(&bytes, base + 4);
+    let file_ver_low = read_u32_le(&bytes, base + 8);
 
-    let major = (file_ver_ms >> 16) & 0xFFFF;
-    let minor = file_ver_ms & 0xFFFF;
-    let build = (file_ver_ls >> 16) & 0xFFFF;
-    let revision = file_ver_ls & 0xFFFF;
+    let major = (file_ver_high >> 16) & 0xFFFF;
+    let minor = file_ver_high & 0xFFFF;
+    let build = (file_ver_low >> 16) & 0xFFFF;
+    let revision = file_ver_low & 0xFFFF;
 
     // Reject obviously invalid versions (all zeros or all 0xFFFF).
     if major == 0 && minor == 0 && build == 0 {

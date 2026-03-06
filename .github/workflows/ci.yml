@@ -13,7 +13,7 @@ env:
 jobs:
   build-and-test:
     name: Build, Test, Clippy, Fmt (${{ matrix.toolchain }})
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     strategy:
       matrix:

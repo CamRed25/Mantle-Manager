@@ -213,7 +213,7 @@ pub trait MantlePlugin: Send + Sync {
     /// this method are both active simultaneously — they are not exclusive.
     ///
     /// # Parameters
-    /// - `event`: The event that was just published on the global EventBus.
+    /// - `event`: The event that was just published on the global `EventBus`.
     ///
     /// # Notes
     /// - Called synchronously on the publishing thread. Must not block.
@@ -496,6 +496,9 @@ impl PluginContext {
     ///
     /// # Parameters
     /// - `list`: Fresh snapshot of the mod list.
+    // TODO(BE-2a): caller wiring is pending — suppress dead_code until
+    // ModInstalled/Enabled/Disabled events are subscribed in subscribe_lifecycle_hooks.
+    #[allow(dead_code)]
     pub(crate) fn update_mod_list(&self, list: Vec<ModInfo>) {
         *self.mod_list.write().expect("PluginContext: mod_list lock poisoned") = list;
     }

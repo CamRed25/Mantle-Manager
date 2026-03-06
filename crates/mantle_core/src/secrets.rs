@@ -1,7 +1,7 @@
 //! OS secret store integration for sensitive credentials.
 //!
 //! Stores the Nexus Mods API key in the platform secret store (GNOME Keyring /
-//! KWallet via the D-Bus Secret Service API) instead of plain-text TOML.
+//! `KWallet` via the D-Bus Secret Service API) instead of plain-text TOML.
 //!
 //! # Feature gate
 //!
@@ -53,6 +53,10 @@ mod real {
     }
 
     /// Store the Nexus Mods API key in the OS secret store.
+    ///
+    /// # Errors
+    /// Returns [`MantleError::Config`] if the keyring entry cannot be created
+    /// or the password cannot be stored.
     pub fn set_nexus_api_key(key: &str) -> Result<(), MantleError> {
         entry()?
             .set_password(key)
@@ -62,10 +66,13 @@ mod real {
     /// Delete the Nexus Mods API key from the OS secret store.
     ///
     /// Returns `Ok(())` if no entry exists (idempotent).
+    ///
+    /// # Errors
+    /// Returns [`MantleError::Config`] if the keyring entry cannot be created
+    /// or the credential cannot be deleted.
     pub fn delete_nexus_api_key() -> Result<(), MantleError> {
         match entry()?.delete_credential() {
-            Ok(()) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(e) => Err(MantleError::Config(format!("keyring delete error: {e}"))),
         }
     }
@@ -79,6 +86,10 @@ mod real {
     ///
     /// This is a one-time operation — once the key is migrated the legacy
     /// field stays empty and the keyring is the single source of truth.
+    ///
+    /// # Errors
+    /// Returns [`MantleError::Config`] if writing to the keyring fails, or
+    /// [`MantleError`] if loading/saving the settings file fails.
     pub fn migrate_key_from_toml(
         legacy_key: &str,
         path: &std::path::Path,

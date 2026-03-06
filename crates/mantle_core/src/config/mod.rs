@@ -190,7 +190,7 @@ pub struct NetworkSettings {
     ///
     /// This field is kept for **migration only**. On first launch after the
     /// `secrets` feature was introduced, any non-empty value here is migrated
-    /// to the OS secret store (GNOME Keyring / KWallet) by
+    /// to the OS secret store (GNOME Keyring / `KWallet`) by
     /// [`crate::secrets::migrate_key_from_toml`], then cleared and saved.
     ///
     /// New code must call [`crate::secrets::get_nexus_api_key`] instead of

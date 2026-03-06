@@ -40,11 +40,13 @@ impl AppServices {
     }
 
     /// Return a `ProfileService` borrowing this instance's database.
+    #[must_use]
     pub fn profile(&self) -> ProfileService<'_> {
         ProfileService::new(&self.db)
     }
 
     /// Return a `ModService` borrowing this instance's database.
+    #[must_use]
     pub fn mods(&self) -> ModService<'_> {
         ModService::new(&self.db)
     }

@@ -25,7 +25,7 @@ use crate::error::MantleError;
 
 /// A single download job as stored in the `downloads` table.
 ///
-/// Mirrors the in-memory `DownloadJob` in `mantle_ui`, serialised for SQLite.
+/// Mirrors the in-memory `DownloadJob` in `mantle_ui`, serialised for `SQLite`.
 #[derive(Debug, Clone)]
 pub struct PersistedDownload {
     /// Stable UUID — matches the in-memory `DownloadJob.id` (as string).
@@ -55,7 +55,7 @@ impl PersistedDownload {
 
     /// Returns `true` if the download should be re-enqueued on app restart.
     ///
-    /// A "queued" or "in_progress" job was interrupted mid-session; we offer
+    /// A "queued" or "`in_progress`" job was interrupted mid-session; we offer
     /// to resume it on the next launch.
     #[must_use]
     pub fn should_resume(&self) -> bool {
@@ -71,11 +71,11 @@ impl PersistedDownload {
 /// equivalent to a full-row update.
 ///
 /// # Parameters
-/// - `conn`: Open SQLite connection.
+/// - `conn`: Open `SQLite` connection.
 /// - `d`:    The download record to persist.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn upsert_download(conn: &Connection, d: &PersistedDownload) -> Result<(), MantleError> {
     conn.execute(
         "INSERT OR REPLACE INTO downloads
@@ -88,11 +88,11 @@ pub fn upsert_download(conn: &Connection, d: &PersistedDownload) -> Result<(), M
             d.dest_path,
             d.status,
             d.progress,
-            d.total_bytes.map(|b| b as i64),
+            d.total_bytes.map(|b| i64::try_from(b).unwrap_or(i64::MAX)),
             d.added_at,
         ],
     )
-    .map_err(|e| MantleError::Database(e))?;
+    .map_err(MantleError::Database)?;
     Ok(())
 }
 
@@ -102,13 +102,13 @@ pub fn upsert_download(conn: &Connection, d: &PersistedDownload) -> Result<(), M
 /// only status/progress change.
 ///
 /// # Parameters
-/// - `conn`:     Open SQLite connection.
+/// - `conn`:     Open `SQLite` connection.
 /// - `id`:       UUID of the job to update.
 /// - `status`:   New status string (e.g. `"complete"`).
 /// - `progress`: New progress value `[0.0, 1.0]`.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn update_download_status(
     conn: &Connection,
     id: &str,
@@ -120,7 +120,7 @@ pub fn update_download_status(
          WHERE id = ?3",
         rusqlite::params![status, progress, id],
     )
-    .map_err(|e| MantleError::Database(e))?;
+    .map_err(MantleError::Database)?;
     Ok(())
 }
 
@@ -130,13 +130,13 @@ pub fn update_download_status(
 /// This provides the queue to display in the UI on startup.
 ///
 /// # Parameters
-/// - `conn`: Open SQLite connection.
+/// - `conn`: Open `SQLite` connection.
 ///
 /// # Returns
 /// All active/interrupted download records in insertion order.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn load_active_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>, MantleError> {
     let mut stmt = conn
         .prepare(
@@ -145,7 +145,7 @@ pub fn load_active_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>
              WHERE status NOT IN ('complete', 'cancelled')
              ORDER BY added_at ASC",
         )
-        .map_err(|e| MantleError::Database(e))?;
+        .map_err(MantleError::Database)?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -156,12 +156,12 @@ pub fn load_active_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>
                 dest_path: row.get(3)?,
                 status: row.get(4)?,
                 progress: row.get(5)?,
-                total_bytes: row.get::<_, Option<i64>>(6)?.map(|b| b as u64),
+                total_bytes: row.get::<_, Option<i64>>(6)?.map(|b| u64::try_from(b).unwrap_or(0)),
                 added_at: row.get(7)?,
             })
         })
-        .map_err(|e| MantleError::Database(e))?
-        .filter_map(|r| r.ok())
+        .map_err(MantleError::Database)?
+        .filter_map(Result::ok)
         .collect();
 
     Ok(rows)
@@ -172,10 +172,10 @@ pub fn load_active_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>
 /// Returns every row ordered by `added_at` descending (newest first).
 ///
 /// # Parameters
-/// - `conn`: Open SQLite connection.
+/// - `conn`: Open `SQLite` connection.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn load_all_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>, MantleError> {
     let mut stmt = conn
         .prepare(
@@ -183,7 +183,7 @@ pub fn load_all_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>, M
              FROM downloads
              ORDER BY added_at DESC",
         )
-        .map_err(|e| MantleError::Database(e))?;
+        .map_err(MantleError::Database)?;
 
     let rows = stmt
         .query_map([], |row| {
@@ -194,12 +194,12 @@ pub fn load_all_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>, M
                 dest_path: row.get(3)?,
                 status: row.get(4)?,
                 progress: row.get(5)?,
-                total_bytes: row.get::<_, Option<i64>>(6)?.map(|b| b as u64),
+                total_bytes: row.get::<_, Option<i64>>(6)?.map(|b| u64::try_from(b).unwrap_or(0)),
                 added_at: row.get(7)?,
             })
         })
-        .map_err(|e| MantleError::Database(e))?
-        .filter_map(|r| r.ok())
+        .map_err(MantleError::Database)?
+        .filter_map(Result::ok)
         .collect();
 
     Ok(rows)
@@ -210,30 +210,30 @@ pub fn load_all_downloads(conn: &Connection) -> Result<Vec<PersistedDownload>, M
 /// Used when the user explicitly clears a completed or failed job.
 ///
 /// # Parameters
-/// - `conn`: Open SQLite connection.
+/// - `conn`: Open `SQLite` connection.
 /// - `id`:   UUID of the job to remove.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn delete_download(conn: &Connection, id: &str) -> Result<(), MantleError> {
     conn.execute("DELETE FROM downloads WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| MantleError::Database(e))?;
+        .map_err(MantleError::Database)?;
     Ok(())
 }
 
 /// Check whether a download record exists by ID.
 ///
 /// # Parameters
-/// - `conn`: Open SQLite connection.
+/// - `conn`: Open `SQLite` connection.
 /// - `id`:   UUID to look up.
 ///
 /// # Errors
-/// Returns [`MantleError::Database`] on any SQLite failure.
+/// Returns [`MantleError::Database`] on any `SQLite` failure.
 pub fn download_exists(conn: &Connection, id: &str) -> Result<bool, MantleError> {
     conn.query_row("SELECT 1 FROM downloads WHERE id = ?1", rusqlite::params![id], |_| Ok(()))
         .optional()
         .map(|o| o.is_some())
-        .map_err(|e| MantleError::Database(e))
+        .map_err(MantleError::Database)
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

@@ -26,31 +26,49 @@ impl<'a> ProfileService<'a> {
     }
 
     /// Return all profiles ordered by creation time.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn list(&self) -> Result<Vec<ProfileRecord>, MantleError> {
         self.db.with_conn(profiles::list_profiles)
     }
 
     /// Return the currently active profile, or `None` if none is set.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn active(&self) -> Result<Option<ProfileRecord>, MantleError> {
         self.db.with_conn(profiles::get_active_profile)
     }
 
     /// Insert a new profile and return its primary key.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn insert(&self, rec: &InsertProfile<'_>) -> Result<i64, MantleError> {
         self.db.with_conn(|conn| profiles::insert_profile(conn, rec))
     }
 
     /// Make `profile_id` the active profile (deactivates all others).
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn activate(&self, profile_id: i64) -> Result<(), MantleError> {
         self.db.with_conn(|conn| profiles::set_active_profile(conn, profile_id))
     }
 
     /// Delete `profile_id`.  Returns `true` if a row was removed.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn delete(&self, profile_id: i64) -> Result<bool, MantleError> {
         self.db.with_conn(|conn| profiles::delete_profile(conn, profile_id))
     }
 
     /// Return a map from profile ID to the number of mods in that profile.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn mod_counts(&self) -> Result<HashMap<i64, usize>, MantleError> {
         self.db.with_conn(mod_list::mod_counts_per_profile)
     }
@@ -58,6 +76,9 @@ impl<'a> ProfileService<'a> {
     /// Create a "Default" profile and activate it if no profiles exist.
     ///
     /// This is idempotent — a no-op when profiles are already present.
+    ///
+    /// # Errors
+    /// Returns [`MantleError`] on database failure.
     pub fn ensure_default(&self) -> Result<(), MantleError> {
         let is_empty = self.list()?.is_empty();
         if is_empty {

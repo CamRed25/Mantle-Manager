@@ -235,6 +235,10 @@ impl PluginRegistry {
     /// A `Vec` of non-fatal [`PluginLoadError`]s, one per plugin that failed.
     /// An empty vector means all plugins loaded successfully.
     ///
+    /// # Panics
+    /// Panics if the internal context-list mutex is poisoned (should never
+    /// happen in normal operation).
+    ///
     /// # Side Effects
     /// Creates per-plugin data directories under
     /// `{base_data_dir}/plugin-data/{plugin_id}/` as needed.
@@ -320,6 +324,9 @@ impl PluginRegistry {
     ///
     /// # Side Effects
     /// After this call `self.plugins` is empty and `plugin_count()` returns 0.
+    ///
+    /// # Panics
+    /// Panics if the internal context-list mutex is poisoned.
     pub fn unload_all(&mut self) {
         // 1. Unsubscribe host lifecycle hooks before invoking plugin shutdowns.
         self.lifecycle_handles.clear();
@@ -358,6 +365,9 @@ impl PluginRegistry {
     ///
     /// Calling this method again removes the old handles first to avoid
     /// duplicate subscriptions (e.g. if `load_dir` is called more than once).
+    ///
+    /// # Panics
+    /// Panics if the internal context-list mutex is poisoned.
     pub fn subscribe_lifecycle_hooks(&mut self) {
         // Remove any previously registered handles to avoid duplicate firings.
         self.lifecycle_handles.clear();
