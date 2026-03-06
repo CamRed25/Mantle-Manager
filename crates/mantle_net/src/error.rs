@@ -32,4 +32,8 @@ pub enum NetError {
     /// A required configuration value (e.g. API key) is absent or empty.
     #[error("configuration error: {0}")]
     Config(String),
+
+    /// A URL or data value could not be parsed.
+    #[error("parse error: {0}")]
+    Parse(String),
 }

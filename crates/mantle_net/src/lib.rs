@@ -22,3 +22,6 @@ pub mod nexus;
 
 /// Crate-level error type — re-exported for convenience.
 pub use error::NetError;
+
+/// NXM URL parsing and CDN resolution — re-exported for convenience.
+pub use nexus::{parse_nxm_url, resolve_nxm, NxmParams};

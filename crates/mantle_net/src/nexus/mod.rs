@@ -210,3 +210,223 @@ fn urlencoded(s: &str) -> String {
     }
     out
 }
+
+// ─── NXM URL handling ─────────────────────────────────────────────────────────
+
+/// Parsed representation of a `nxm://` deep-link URL.
+///
+/// Nexus Mods uses this scheme to trigger mod manager downloads from the
+/// browser.  The format is:
+/// ```text
+/// nxm://{game_domain}/mods/{mod_id}/files/{file_id}?key={key}&expires={expires}
+/// ```
+/// The `key` and `expires` fields are only present for free-tier downloads
+/// and must be forwarded to the Nexus download-link endpoint unchanged.
+#[derive(Debug, PartialEq)]
+pub struct NxmParams {
+    /// Nexus game slug, e.g. `"skyrimspecialedition"`.
+    pub game_domain: String,
+    /// Nexus mod ID.
+    pub mod_id: u32,
+    /// Nexus file ID.
+    pub file_id: u64,
+    /// CDN expiry key for free-tier accounts (forwarded to download endpoint).
+    pub key: Option<String>,
+    /// UNIX timestamp at which `key` expires.
+    pub expires: Option<u64>,
+}
+
+/// Parse a `nxm://` URL into its constituent parts.
+///
+/// # Format
+/// ```text
+/// nxm://{game_domain}/mods/{mod_id}/files/{file_id}[?key={key}&expires={ts}]
+/// ```
+///
+/// # Parameters
+/// - `url`: the raw `nxm://` URL string to parse.
+///
+/// # Returns
+/// A populated [`NxmParams`] on success.
+///
+/// # Errors
+/// Returns [`NetError::Parse`] if the scheme is not `nxm`, if path segments
+/// are missing or malformed, or if the numeric IDs cannot be parsed.
+pub fn parse_nxm_url(url: &str) -> Result<NxmParams, NetError> {
+    // Validate scheme prefix.
+    let rest = url
+        .strip_prefix("nxm://")
+        .ok_or_else(|| NetError::Parse(format!("not an nxm:// URL: {url}")))?;
+
+    // Split query string (optional).
+    let (authority_and_path, query) = match rest.split_once('?') {
+        Some((l, r)) => (l, Some(r)),
+        None => (rest, None),
+    };
+
+    // Path: {game_domain}/mods/{mod_id}/files/{file_id}
+    let mut parts = authority_and_path.splitn(5, '/');
+    let game_domain = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| NetError::Parse("missing game domain in nxm URL".to_string()))?
+        .to_string();
+
+    // Skip literal "mods" segment.
+    match parts.next() {
+        Some("mods") => {}
+        other => {
+            return Err(NetError::Parse(format!(
+                "expected 'mods' segment, got: {other:?}"
+            )))
+        }
+    }
+
+    let mod_id_str = parts
+        .next()
+        .ok_or_else(|| NetError::Parse("missing mod_id in nxm URL".to_string()))?;
+    let mod_id: u32 = mod_id_str
+        .parse()
+        .map_err(|_| NetError::Parse(format!("invalid mod_id '{mod_id_str}'")))?;
+
+    // Skip literal "files" segment.
+    match parts.next() {
+        Some("files") => {}
+        other => {
+            return Err(NetError::Parse(format!(
+                "expected 'files' segment, got: {other:?}"
+            )))
+        }
+    }
+
+    let file_id_str = parts
+        .next()
+        .ok_or_else(|| NetError::Parse("missing file_id in nxm URL".to_string()))?;
+    let file_id: u64 = file_id_str
+        .parse()
+        .map_err(|_| NetError::Parse(format!("invalid file_id '{file_id_str}'")))?;
+
+    // Parse optional query params: key=…&expires=…
+    let mut key: Option<String> = None;
+    let mut expires: Option<u64> = None;
+    if let Some(q) = query {
+        for pair in q.split('&') {
+            if let Some(v) = pair.strip_prefix("key=") {
+                key = Some(v.to_string());
+            } else if let Some(v) = pair.strip_prefix("expires=") {
+                expires = v.parse().ok();
+            }
+        }
+    }
+
+    Ok(NxmParams {
+        game_domain,
+        mod_id,
+        file_id,
+        key,
+        expires,
+    })
+}
+
+/// Resolve an `nxm://` URL to a direct CDN download URL.
+///
+/// Creates a temporary [`NexusClient`], parses the NXM URL, calls the Nexus
+/// download-link endpoint (forwarding `key`/`expires` for free-tier), and
+/// returns the first CDN URI from the response.
+///
+/// Download links expire within seconds; begin the download immediately after
+/// receiving the result.
+///
+/// # Parameters
+/// - `nxm_url`:  Raw `nxm://` URL string (e.g. from a browser deep-link).
+/// - `api_key`:  Nexus Mods personal API key used to authenticate the request.
+///
+/// # Returns
+/// Direct HTTPS CDN URL for the file download.
+///
+/// # Errors
+/// Returns [`NetError::Parse`] for malformed NXM URLs, [`NetError::Config`]
+/// for an empty API key, [`NetError::Status`] for non-2xx API responses, or
+/// [`NetError::Http`] for transport failures.
+pub async fn resolve_nxm(nxm_url: &str, api_key: &str) -> Result<String, NetError> {
+    let params = parse_nxm_url(nxm_url)?;
+    let client = NexusClient::new(api_key)?;
+
+    // Build the download-link URL, appending key/expires for free accounts.
+    let mut url = format!(
+        "{API_BASE}/games/{}/mods/{}/files/{}/download_link.json",
+        params.game_domain, params.mod_id, params.file_id
+    );
+    let mut sep = '?';
+    if let Some(k) = &params.key {
+        url.push(sep);
+        url.push_str("key=");
+        url.push_str(k);
+        sep = '&';
+    }
+    if let Some(exp) = params.expires {
+        url.push(sep);
+        url.push_str(&format!("expires={exp}"));
+    }
+
+    let links: Vec<models::DownloadLink> = client.get_json(&url).await?;
+    links
+        .into_iter()
+        .next()
+        .map(|l| l.uri)
+        .ok_or_else(|| NetError::Parse("Nexus returned empty download link list".to_string()))
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A well-formed `nxm://` URL with key and expires query params parses
+    /// correctly.
+    #[test]
+    fn parse_nxm_url_valid_with_query() {
+        let url = "nxm://skyrimspecialedition/mods/12345/files/67890?key=abc123&expires=9999999";
+        let params = parse_nxm_url(url).expect("should parse");
+        assert_eq!(params.game_domain, "skyrimspecialedition");
+        assert_eq!(params.mod_id, 12345);
+        assert_eq!(params.file_id, 67890);
+        assert_eq!(params.key.as_deref(), Some("abc123"));
+        assert_eq!(params.expires, Some(9_999_999));
+    }
+
+    /// A minimal `nxm://` URL with no query string (premium accounts) parses
+    /// correctly and leaves `key`/`expires` as `None`.
+    #[test]
+    fn parse_nxm_url_valid_no_query() {
+        let url = "nxm://fallout4/mods/1/files/2";
+        let params = parse_nxm_url(url).expect("should parse");
+        assert_eq!(params.game_domain, "fallout4");
+        assert_eq!(params.mod_id, 1);
+        assert_eq!(params.file_id, 2);
+        assert!(params.key.is_none());
+        assert!(params.expires.is_none());
+    }
+
+    /// A URL with the wrong scheme returns `NetError::Parse`.
+    #[test]
+    fn parse_nxm_url_wrong_scheme() {
+        let result = parse_nxm_url("https://nexusmods.com/mods/1/files/2");
+        assert!(
+            matches!(result, Err(NetError::Parse(_))),
+            "expected Parse error, got: {result:?}"
+        );
+    }
+
+    /// A `nxm://` URL missing the file_id segment returns `NetError::Parse`.
+    #[test]
+    fn parse_nxm_url_missing_file_id() {
+        let result = parse_nxm_url("nxm://skyrimspecialedition/mods/1/files/");
+        // file_id "" cannot be parsed as u64
+        assert!(
+            matches!(result, Err(NetError::Parse(_))),
+            "expected Parse error for empty file_id, got: {result:?}"
+        );
+    }
+}
