@@ -149,13 +149,8 @@ mod tests {
     /// The server task is spawned on the current Tokio runtime and handles
     /// exactly one connection before exiting.
     async fn serve_once(body: &'static [u8]) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind mock listener");
-        let port = listener
-            .local_addr()
-            .expect("local_addr")
-            .port();
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind mock listener");
+        let port = listener.local_addr().expect("local_addr").port();
         let body_len = body.len();
 
         tokio::spawn(async move {
@@ -169,10 +164,7 @@ mod tests {
                  Content-Type: application/octet-stream\r\n\
                  Connection: close\r\n\r\n"
             );
-            stream
-                .write_all(header.as_bytes())
-                .await
-                .expect("write header");
+            stream.write_all(header.as_bytes()).await.expect("write header");
             stream.write_all(body).await.expect("write body");
         });
 
@@ -181,9 +173,7 @@ mod tests {
 
     /// Serve a single HTTP response with the given status code and optional body.
     async fn serve_error(status: u16) -> String {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind mock listener");
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind mock listener");
         let port = listener.local_addr().expect("local_addr").port();
 
         tokio::spawn(async move {
@@ -231,20 +221,13 @@ mod tests {
         .expect("download_file should succeed");
 
         assert_eq!(total_written, BODY.len() as u64, "byte count matches");
-        assert_eq!(
-            std::fs::read(&dest).expect("read dest"),
-            BODY,
-            "file content matches"
-        );
+        assert_eq!(std::fs::read(&dest).expect("read dest"), BODY, "file content matches");
         assert_eq!(
             bytes_seen.load(Ordering::Relaxed),
             BODY.len() as u64,
             "progress callback reached full byte count"
         );
-        assert!(
-            !dest.with_extension("tmp").exists(),
-            "temp file must be cleaned up"
-        );
+        assert!(!dest.with_extension("tmp").exists(), "temp file must be cleaned up");
     }
 
     /// `download_file` returns `NetError::Status` when the server responds

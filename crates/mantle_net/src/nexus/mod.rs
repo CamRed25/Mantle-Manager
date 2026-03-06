@@ -275,11 +275,7 @@ pub fn parse_nxm_url(url: &str) -> Result<NxmParams, NetError> {
     // Skip literal "mods" segment.
     match parts.next() {
         Some("mods") => {}
-        other => {
-            return Err(NetError::Parse(format!(
-                "expected 'mods' segment, got: {other:?}"
-            )))
-        }
+        other => return Err(NetError::Parse(format!("expected 'mods' segment, got: {other:?}"))),
     }
 
     let mod_id_str = parts
@@ -292,11 +288,7 @@ pub fn parse_nxm_url(url: &str) -> Result<NxmParams, NetError> {
     // Skip literal "files" segment.
     match parts.next() {
         Some("files") => {}
-        other => {
-            return Err(NetError::Parse(format!(
-                "expected 'files' segment, got: {other:?}"
-            )))
-        }
+        other => return Err(NetError::Parse(format!("expected 'files' segment, got: {other:?}"))),
     }
 
     let file_id_str = parts

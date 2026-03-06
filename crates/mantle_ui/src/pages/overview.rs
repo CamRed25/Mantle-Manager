@@ -405,14 +405,11 @@ fn diag_banners(entries: &[DiagnosticEntry]) -> Vec<adw::Banner> {
 /// # Parameters
 /// - `entry`: The diagnostic to render.
 fn diag_banner(entry: &DiagnosticEntry) -> adw::Banner {
-    let banner = adw::Banner::builder()
-        .title(&entry.title)
-        .revealed(true)
-        .build();
+    let banner = adw::Banner::builder().title(&entry.title).revealed(true).build();
 
     match entry.severity {
         DiagnosticSeverity::Warning => banner.add_css_class("warning"),
-        DiagnosticSeverity::Info    => banner.add_css_class("accent"),
+        DiagnosticSeverity::Info => banner.add_css_class("accent"),
     }
 
     if let Some(detail) = &entry.detail {

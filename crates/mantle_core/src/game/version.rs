@@ -120,10 +120,7 @@ const VS_FIXED_FILE_INFO_SIGNATURE: u32 = 0xFEEF_04BD;
 /// `Some("major.minor.build.revision")` on success, `None` otherwise.
 fn pe_version(install_path: &Path, app_id: u32) -> Option<String> {
     // Look up the game's executable name from the static table.
-    let exe_name = KNOWN_GAMES
-        .iter()
-        .find(|g| g.steam_app_id == app_id)
-        .map(|g| g.executable)?;
+    let exe_name = KNOWN_GAMES.iter().find(|g| g.steam_app_id == app_id).map(|g| g.executable)?;
 
     let exe_path = install_path.join(exe_name);
     let bytes = fs::read(&exe_path)
@@ -134,9 +131,7 @@ fn pe_version(install_path: &Path, app_id: u32) -> Option<String> {
     let sig = VS_FIXED_FILE_INFO_SIGNATURE.to_le_bytes();
 
     // Find the signature in the raw bytes.
-    let offset = bytes
-        .windows(sig.len())
-        .position(|w| w == sig)?;
+    let offset = bytes.windows(sig.len()).position(|w| w == sig)?;
 
     // VS_FIXEDFILEINFO layout after the signature:
     //   +0  DWORD dwSignature   (already matched)

@@ -51,7 +51,6 @@ impl<'a> ModService<'a> {
     /// Returns `true` if inserted, `false` if the mod was already in the
     /// profile (idempotent).
     pub fn add_to_profile(&self, profile_id: i64, mod_id: i64) -> Result<bool, MantleError> {
-        self.db
-            .with_conn(|conn| mod_list::add_mod_to_profile(conn, profile_id, mod_id))
+        self.db.with_conn(|conn| mod_list::add_mod_to_profile(conn, profile_id, mod_id))
     }
 }

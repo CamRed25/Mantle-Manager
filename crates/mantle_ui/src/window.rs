@@ -45,17 +45,16 @@ use mantle_core::{
 
 #[cfg(feature = "net")]
 use crate::pages::nexus_search;
+#[cfg(feature = "net")]
+use crate::skse;
 use crate::{
     downloads::{DownloadProgress, DownloadQueue},
-    install_dialog,
-    launch,
+    install_dialog, launch,
     pages::{downloads, mods, overview, plugins, profiles},
     settings, sidebar,
     state::AppState,
     state_worker,
 };
-#[cfg(feature = "net")]
-use crate::skse;
 
 // ─── Public entry point ───────────────────────────────────────────────────────
 
@@ -80,10 +79,7 @@ use crate::skse;
 // `connect_open` handler in `main.rs`.  Drained by the NXM idle loop (net
 // feature only).  Ignored when the net feature is disabled.
 #[allow(clippy::too_many_lines)]
-pub fn build_ui(
-    app: &adw::Application,
-    nxm_queue: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
-) {
+pub fn build_ui(app: &adw::Application, nxm_queue: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
     // Apply saved color scheme before any widgets render so the first frame
     // uses the correct theme.
     let settings_path = default_settings_path();
@@ -122,9 +118,10 @@ pub fn build_ui(
     // DownloadProgress messages; the second idle loop drains `progress_rx`
     // and calls apply_progress() so status is reflected without a full reload.
     let (progress_tx, progress_rx) = std::sync::mpsc::channel::<DownloadProgress>();
-    let queue_rc: Rc<RefCell<DownloadQueue>> = Rc::new(RefCell::new(
-        DownloadQueue::new_with_db(progress_tx, mantle_core::config::default_db_path()),
-    ));
+    let queue_rc: Rc<RefCell<DownloadQueue>> = Rc::new(RefCell::new(DownloadQueue::new_with_db(
+        progress_tx,
+        mantle_core::config::default_db_path(),
+    )));
 
     // Shared steam_app_id: set by the idle callback when live state arrives;
     // read by the launch button callback.  Rc<Cell<…>> is safe for the GTK
@@ -404,15 +401,11 @@ pub fn build_ui(
         // keyring is unavailable.
         let api_key_nxm = mantle_core::secrets::get_nexus_api_key()
             .unwrap_or_else(|| initial_settings.network.nexus_api_key_legacy.clone());
-        let downloads_dir_nxm = initial_settings
-            .paths
-            .downloads_dir
-            .clone()
-            .unwrap_or_else(|| {
-                let d = mantle_core::config::data_dir().join("downloads");
-                let _ = std::fs::create_dir_all(&d);
-                d
-            });
+        let downloads_dir_nxm = initial_settings.paths.downloads_dir.clone().unwrap_or_else(|| {
+            let d = mantle_core::config::data_dir().join("downloads");
+            let _ = std::fs::create_dir_all(&d);
+            d
+        });
         let queue_nxm = Rc::clone(&queue_rc);
         let (nxm_result_tx, nxm_result_rx) =
             std::sync::mpsc::channel::<(String, String, std::path::PathBuf)>();

@@ -31,8 +31,8 @@ use tracing::{info, warn};
 use crate::{error::MantleError, game::GameInfo};
 
 use super::{
-    native::load_native_plugin, scripted::load_scripted_plugin, Capability, EventBus,
-    EventFilter, MantlePlugin, ModInfo, ModManagerEvent, PluginContext, PluginError, SettingValue,
+    native::load_native_plugin, scripted::load_scripted_plugin, Capability, EventBus, EventFilter,
+    MantlePlugin, ModInfo, ModManagerEvent, PluginContext, PluginError, SettingValue,
     SubscriptionHandle,
 };
 
@@ -364,31 +364,25 @@ impl PluginRegistry {
 
         // ── ProfileChanged → update active_profile snapshot ──────────────────
         let ctxs = Arc::clone(&self.contexts);
-        let h_profile = self.event_bus.subscribe(
-            EventFilter::ProfileChanged,
-            move |event| {
-                if let ModManagerEvent::ProfileChanged { new, .. } = event {
-                    let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
-                    for ctx in list.iter() {
-                        ctx.update_active_profile(new.clone());
-                    }
+        let h_profile = self.event_bus.subscribe(EventFilter::ProfileChanged, move |event| {
+            if let ModManagerEvent::ProfileChanged { new, .. } = event {
+                let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
+                for ctx in list.iter() {
+                    ctx.update_active_profile(new.clone());
                 }
-            },
-        );
+            }
+        });
 
         // ── GameLaunching → update game snapshot ──────────────────────────────
         let ctxs = Arc::clone(&self.contexts);
-        let h_game = self.event_bus.subscribe(
-            EventFilter::GameLaunching,
-            move |event| {
-                if let ModManagerEvent::GameLaunching(game) = event {
-                    let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
-                    for ctx in list.iter() {
-                        ctx.update_game(Some(game.clone()));
-                    }
+        let h_game = self.event_bus.subscribe(EventFilter::GameLaunching, move |event| {
+            if let ModManagerEvent::GameLaunching(game) = event {
+                let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
+                for ctx in list.iter() {
+                    ctx.update_game(Some(game.clone()));
                 }
-            },
-        );
+            }
+        });
 
         self.lifecycle_handles.push(h_profile);
         self.lifecycle_handles.push(h_game);
@@ -917,14 +911,8 @@ required = ["notifications"]
 
     /// Helper: inject a pre-built context into the registry's context list and
     /// subscribe lifecycle hooks. Used when we don't have a real plugin to load.
-    fn inject_ctx_and_subscribe(
-        reg: &mut PluginRegistry,
-        ctx: Arc<crate::plugin::PluginContext>,
-    ) {
-        reg.contexts
-            .lock()
-            .expect("test: context list poisoned")
-            .push(ctx);
+    fn inject_ctx_and_subscribe(reg: &mut PluginRegistry, ctx: Arc<crate::plugin::PluginContext>) {
+        reg.contexts.lock().expect("test: context list poisoned").push(ctx);
         reg.subscribe_lifecycle_hooks();
     }
 

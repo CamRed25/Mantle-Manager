@@ -463,9 +463,7 @@ fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::P
         // move it to the keyring now.
         let legacy = shared.borrow().network.nexus_api_key_legacy.clone();
         if !legacy.is_empty() {
-            if let Err(e) =
-                mantle_core::secrets::migrate_key_from_toml(&legacy, &path)
-            {
+            if let Err(e) = mantle_core::secrets::migrate_key_from_toml(&legacy, &path) {
                 tracing::warn!("API key migration failed: {e}");
             } else {
                 shared.borrow_mut().network.nexus_api_key_legacy.clear();
@@ -473,9 +471,7 @@ fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::P
         }
     }
     // Populate display from the secret store (falls back to empty string).
-    key_row.set_text(
-        &mantle_core::secrets::get_nexus_api_key().unwrap_or_default(),
-    );
+    key_row.set_text(&mantle_core::secrets::get_nexus_api_key().unwrap_or_default());
     {
         key_row.connect_apply(move |row| {
             let new_key = row.text().to_string();

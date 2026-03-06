@@ -402,9 +402,7 @@ impl DownloadQueue {
         // ── Persist terminal status to SQLite (fire-and-forget) ───────
         let is_terminal = matches!(
             progress.status,
-            DownloadStatus::Complete { .. }
-                | DownloadStatus::Failed(_)
-                | DownloadStatus::Cancelled
+            DownloadStatus::Complete { .. } | DownloadStatus::Failed(_) | DownloadStatus::Cancelled
         );
         if is_terminal {
             if let Some(db_path) = self.db_path.clone() {
@@ -423,7 +421,10 @@ impl DownloadQueue {
                 std::thread::spawn(move || {
                     if let Ok(conn) = rusqlite::Connection::open(&db_path) {
                         let _ = mantle_core::data::downloads::update_download_status(
-                            &conn, &id_str, &status_str, prog,
+                            &conn,
+                            &id_str,
+                            &status_str,
+                            prog,
                         );
                     }
                 });

@@ -165,9 +165,7 @@ mod tests {
     #[cfg(not(feature = "secrets"))]
     #[test]
     fn migrate_is_noop_without_secrets_feature() {
-        assert!(
-            migrate_key_from_toml("old-key", std::path::Path::new("/nonexistent.toml")).is_ok()
-        );
+        assert!(migrate_key_from_toml("old-key", std::path::Path::new("/nonexistent.toml")).is_ok());
     }
 
     /// Round-trip through the real secret store. Requires a running D-Bus

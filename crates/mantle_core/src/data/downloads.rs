@@ -230,14 +230,10 @@ pub fn delete_download(conn: &Connection, id: &str) -> Result<(), MantleError> {
 /// # Errors
 /// Returns [`MantleError::Database`] on any SQLite failure.
 pub fn download_exists(conn: &Connection, id: &str) -> Result<bool, MantleError> {
-    conn.query_row(
-        "SELECT 1 FROM downloads WHERE id = ?1",
-        rusqlite::params![id],
-        |_| Ok(()),
-    )
-    .optional()
-    .map(|o| o.is_some())
-    .map_err(|e| MantleError::Database(e))
+    conn.query_row("SELECT 1 FROM downloads WHERE id = ?1", rusqlite::params![id], |_| Ok(()))
+        .optional()
+        .map(|o| o.is_some())
+        .map_err(|e| MantleError::Database(e))
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

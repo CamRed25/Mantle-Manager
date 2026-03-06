@@ -61,7 +61,10 @@ impl<'a> ProfileService<'a> {
     pub fn ensure_default(&self) -> Result<(), MantleError> {
         let is_empty = self.list()?.is_empty();
         if is_empty {
-            let id = self.insert(&InsertProfile { name: "Default", game_slug: None })?;
+            let id = self.insert(&InsertProfile {
+                name: "Default",
+                game_slug: None,
+            })?;
             self.activate(id)?;
         }
         Ok(())

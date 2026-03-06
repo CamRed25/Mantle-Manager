@@ -25,9 +25,7 @@ use rusqlite::Connection;
 /// Index 0 → migration 1, index 1 → migration 2, …
 /// Each string is a complete SQL script that, when executed, MUST insert one
 /// row into `schema_version` as its last statement.
-const MIGRATIONS: &[&str] = &[
-    include_str!("migrations/m001_initial.sql"),
-];
+const MIGRATIONS: &[&str] = &[include_str!("migrations/m001_initial.sql")];
 
 // ---------------------------------------------------------------------------
 // Public API

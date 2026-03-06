@@ -36,7 +36,10 @@ use mantle_core::{
     vfs,
 };
 
-use crate::state::{AppState, DiagnosticEntry, DiagnosticSeverity, DownloadEntry, DownloadStatus, ModEntry, PluginEntry, ProfileEntry, ThemeEntry};
+use crate::state::{
+    AppState, DiagnosticEntry, DiagnosticSeverity, DownloadEntry, DownloadStatus, ModEntry,
+    PluginEntry, ProfileEntry, ThemeEntry,
+};
 
 // ─── Cached game detection ───────────────────────────────────────────────────
 
@@ -101,16 +104,15 @@ fn load_diagnostics(
             // Derive saves path from Proton prefix. Bethesda games store saves at:
             // `{proton_prefix}/drive_c/users/steamuser/Documents/My Games/{subdir}/Saves`
             let saves_subdir: Option<&str> = match game.kind {
-                GameKind::SkyrimLE  => Some("Skyrim"),
-                GameKind::SkyrimSE
-                | GameKind::SkyrimVR => Some("Skyrim Special Edition"),
-                GameKind::EnderalSE  => Some("Enderal Special Edition"),
-                GameKind::Oblivion   => Some("Oblivion"),
-                GameKind::Fallout3   => Some("Fallout3"),
-                GameKind::FalloutNV  => Some("FalloutNV"),
-                GameKind::Fallout4   => Some("Fallout4"),
-                GameKind::Starfield  => Some("Starfield"),
-                GameKind::Morrowind  => None, // no SE
+                GameKind::SkyrimLE => Some("Skyrim"),
+                GameKind::SkyrimSE | GameKind::SkyrimVR => Some("Skyrim Special Edition"),
+                GameKind::EnderalSE => Some("Enderal Special Edition"),
+                GameKind::Oblivion => Some("Oblivion"),
+                GameKind::Fallout3 => Some("Fallout3"),
+                GameKind::FalloutNV => Some("FalloutNV"),
+                GameKind::Fallout4 => Some("Fallout4"),
+                GameKind::Starfield => Some("Starfield"),
+                GameKind::Morrowind => None, // no SE
             };
 
             if let (Some(prefix), Some(subdir)) = (&game.proton_prefix, saves_subdir) {
@@ -120,11 +122,7 @@ fn load_diagnostics(
                     .join("Saves");
 
                 if let Some(mods_dir) = &settings.paths.mods_dir {
-                    let result = diag::scan_missing_cosaves(
-                        &saves_dir,
-                        mods_dir,
-                        &cosave_cfg,
-                    );
+                    let result = diag::scan_missing_cosaves(&saves_dir, mods_dir, &cosave_cfg);
                     if result.se_detected && !result.is_ok() {
                         let count = result.missing_cosaves.len();
                         entries.push(DiagnosticEntry {
@@ -155,7 +153,11 @@ fn load_diagnostics(
         if !result.is_empty() {
             let non_empty: Vec<&str> = result.non_empty_categories();
             let summary = if non_empty.is_empty() {
-                format!("{} file{} in the overwrite directory", result.total_files(), if result.total_files() == 1 { "" } else { "s" })
+                format!(
+                    "{} file{} in the overwrite directory",
+                    result.total_files(),
+                    if result.total_files() == 1 { "" } else { "s" }
+                )
             } else {
                 format!(
                     "{} file{} in overwrite ({})",
@@ -232,11 +234,9 @@ enum RefreshScope {
 /// # Parameters
 /// - `sender`: The sending end of a `std::sync::mpsc::channel::<AppState>`.
 pub fn trigger_reload(sender: Sender<AppState>) {
-    std::thread::spawn(move || {
-        match open_services() {
-            Ok(services) => resend_state(&services, RefreshScope::Full, &sender),
-            Err(e) => tracing::warn!("trigger_reload: failed to open DB — {e}"),
-        }
+    std::thread::spawn(move || match open_services() {
+        Ok(services) => resend_state(&services, RefreshScope::Full, &sender),
+        Err(e) => tracing::warn!("trigger_reload: failed to open DB — {e}"),
     });
 }
 
@@ -460,8 +460,13 @@ fn load_state(services: &AppServices, scope: RefreshScope) -> anyhow::Result<App
     let profile_names: Vec<String> = all_profiles.iter().map(|p| p.name.clone()).collect();
     let (plugin_entries, plugin_count) = match scope {
         RefreshScope::Full => {
-            let result =
-                load_plugins(db, active_profile_id, &active_profile_name, &profile_names, first_game);
+            let result = load_plugins(
+                db,
+                active_profile_id,
+                &active_profile_name,
+                &profile_names,
+                first_game,
+            );
             // Persist result for future ModsOnly refreshes.
             if let Ok(mut cache) = plugin_cache().lock() {
                 *cache = result.clone();
@@ -600,8 +605,7 @@ fn build_mod_list_with_conflicts(
 /// List of download entries ordered by insertion time (oldest first).
 fn load_downloads_snapshot(db: &mantle_core::data::Database) -> Vec<DownloadEntry> {
     let rows = db.with_conn(|conn| {
-        mantle_core::data::downloads::load_active_downloads(conn)
-            .unwrap_or_default()
+        mantle_core::data::downloads::load_active_downloads(conn).unwrap_or_default()
     });
 
     rows.into_iter()
@@ -621,7 +625,11 @@ fn load_downloads_snapshot(db: &mantle_core::data::Database) -> Vec<DownloadEntr
 /// - `total_bytes`: Stored total byte count, if known.
 // `bytes_done` reconstruction uses f64 arithmetic on u64 byte counts; the
 // sub-byte precision loss and sign assumptions are intentional approximations.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss
+)]
 fn persisted_status_to_download_status(
     status: &str,
     progress: f64,
