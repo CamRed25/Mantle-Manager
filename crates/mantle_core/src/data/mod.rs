@@ -20,6 +20,7 @@
 //! Call [`run_migrations`] (free function) on a fresh connection to bring
 //! a database up to the latest schema version.
 
+pub mod downloads;
 pub mod mod_files;
 pub mod mods;
 pub mod profiles;

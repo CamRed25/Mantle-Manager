@@ -27,8 +27,6 @@ use rusqlite::Connection;
 /// row into `schema_version` as its last statement.
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/m001_initial.sql"),
-    // Add future migrations here, e.g.:
-    // include_str!("migrations/m002_add_conflict_cache.sql"),
 ];
 
 // ---------------------------------------------------------------------------

@@ -38,7 +38,7 @@ use mantle_core::{
     vfs,
 };
 
-use crate::state::{AppState, ModEntry, ProfileEntry, ThemeEntry};
+use crate::state::{AppState, DownloadEntry, DownloadStatus, ModEntry, ProfileEntry, ThemeEntry};
 
 // ─── Cached game detection ───────────────────────────────────────────────────
 
@@ -295,9 +295,9 @@ fn load_state() -> anyhow::Result<AppState> {
         overlay_backend: vfs::select_backend().to_string(),
         mods: mod_entries,
         profiles: profile_entries,
-        // Download queue lives in-memory only; no DB persistence yet.
-        // See futures.md "State worker detection".
-        downloads: vec![],
+        // Load active (non-completed) downloads from the DB so the UI
+        // displays their last-known status from the previous session.
+        downloads: load_downloads_snapshot(&db),
         plugins: plugin_entries,
         themes: load_themes(&settings.ui.theme),
         // Data directory used as the VFS merge_dir target during launch mount.
@@ -387,6 +387,62 @@ fn build_mod_list_with_conflicts(
         .collect();
 
     Ok((entries, count, total_file_conflicts))
+}
+
+/// Load non-completed downloads from the DB and convert to [`DownloadEntry`]
+/// snapshots for initial UI display.
+///
+/// Errors are non-fatal: a failed query returns an empty list so the rest
+/// of the state can still load normally.
+///
+/// # Parameters
+/// - `db`: Open application database.
+///
+/// # Returns
+/// List of download entries ordered by insertion time (oldest first).
+fn load_downloads_snapshot(db: &mantle_core::data::Database) -> Vec<DownloadEntry> {
+    let rows = db.with_conn(|conn| {
+        mantle_core::data::downloads::load_active_downloads(conn)
+            .unwrap_or_default()
+    });
+
+    rows.into_iter()
+        .map(|d| DownloadEntry {
+            id: d.id,
+            name: d.filename,
+            state: persisted_status_to_download_status(&d.status, d.progress, d.total_bytes),
+        })
+        .collect()
+}
+
+/// Convert a persisted status string + ancillary data to a [`DownloadStatus`].
+///
+/// # Parameters
+/// - `status`:      Status string from the `downloads` table.
+/// - `progress`:    Stored progress value `[0.0, 1.0]`.
+/// - `total_bytes`: Stored total byte count, if known.
+fn persisted_status_to_download_status(
+    status: &str,
+    progress: f64,
+    total_bytes: Option<u64>,
+) -> DownloadStatus {
+    match status {
+        "queued" => DownloadStatus::Queued,
+        "in_progress" => DownloadStatus::InProgress {
+            progress,
+            bytes_done: (total_bytes.unwrap_or(0) as f64 * progress) as u64,
+            total_bytes,
+        },
+        "complete" => DownloadStatus::Complete {
+            bytes: total_bytes.unwrap_or(0),
+        },
+        "failed" => DownloadStatus::Failed("Interrupted by restart".to_string()),
+        "cancelled" => DownloadStatus::Cancelled,
+        other => {
+            tracing::warn!(status = other, "unknown persisted download status; treating as failed");
+            DownloadStatus::Failed(format!("Unknown status: {other}"))
+        }
+    }
 }
 
 /// Build the full theme list: built-in entries first, then user-installed.

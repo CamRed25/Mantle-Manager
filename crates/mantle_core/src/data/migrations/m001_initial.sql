@@ -114,25 +114,21 @@ CREATE INDEX idx_load_order_profile ON load_order(profile_id, load_index);
 -- ─── Downloads ───────────────────────────────────────────────────────────────
 
 -- Download history and queue state.
+-- `id` is a stable UUID string matching the in-memory DownloadJob.id.
+-- Status values: 'queued' | 'in_progress' | 'complete' | 'failed' | 'cancelled'
 CREATE TABLE downloads (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    url             TEXT NOT NULL,
-    dest_path       TEXT NOT NULL,
-    -- 'queued' | 'in_progress' | 'complete' | 'failed'
-    status          TEXT NOT NULL DEFAULT 'queued',
-    -- Bytes downloaded so far (updated periodically).
-    bytes_received  INTEGER NOT NULL DEFAULT 0,
-    -- Total bytes, NULL if content-length unknown.
-    bytes_total     INTEGER,
-    error_message   TEXT,           -- NULL unless status = 'failed'
-    nexus_mod_id    INTEGER,
-    nexus_file_id   INTEGER,
-    queued_at       INTEGER NOT NULL,
-    completed_at    INTEGER         -- NULL until status = 'complete' or 'failed'
+    id          TEXT PRIMARY KEY,
+    url         TEXT NOT NULL,
+    filename    TEXT NOT NULL,
+    dest_path   TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'queued',
+    progress    REAL NOT NULL DEFAULT 0.0,
+    total_bytes INTEGER,
+    added_at    INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at  INTEGER
 );
 
 CREATE INDEX idx_downloads_status ON downloads(status);
-CREATE INDEX idx_downloads_nexus  ON downloads(nexus_mod_id, nexus_file_id);
 
 -- ─── Plugin Settings ─────────────────────────────────────────────────────────
 

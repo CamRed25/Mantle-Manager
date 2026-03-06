@@ -5,6 +5,10 @@
 //! real HTTP download task via `mantle_net`.  Without `net` every job
 //! immediately fails with a "not implemented" message.
 //!
+//! When a `db_path` is supplied (via [`DownloadQueue::new_with_db`]), each
+//! enqueue call and each terminal status transition is persisted to SQLite so
+//! downloads survive an application restart.
+//!
 //! See futures.md "Download HTTP fetch implementation" for the full
 //! implementation plan.
 use std::{collections::VecDeque, path::PathBuf, sync::mpsc};
@@ -145,12 +149,20 @@ fn spawn_download(
 ///
 /// All mutations happen on the GTK main thread.  Background tasks
 /// communicate back via the [`mpsc::Sender<DownloadProgress>`] channel.
+///
+/// When `db_path` is `Some`, each enqueue call and each terminal status
+/// transition is persisted to the SQLite database so downloads survive
+/// an application restart.
 pub struct DownloadQueue {
     /// Ordered list of all jobs (active + historical).
     jobs: VecDeque<DownloadJob>,
     /// Sender half given to future background tasks so they can push progress
     /// updates back to the UI idle loop.
     progress_tx: mpsc::Sender<DownloadProgress>,
+    /// Optional SQLite database path for persisting download state across
+    /// application restarts.  `None` means no persistence (tests / offline
+    /// builds).
+    db_path: Option<std::path::PathBuf>,
 }
 
 impl DownloadQueue {
@@ -158,16 +170,41 @@ impl DownloadQueue {
     // Construction
     // -----------------------------------------------------------------------
 
-    /// Create a new, empty `DownloadQueue`.
+    /// Create a new, empty `DownloadQueue` **without** SQLite persistence.
+    ///
+    /// Suitable for unit tests or any code path that does not need to survive
+    /// a restart.  Use [`Self::new_with_db`] for production use.
     ///
     /// # Parameters
-    /// - `progress_tx` – sender end of the progress channel.  The UI supplies
-    ///   its own `Receiver`; background tasks will clone `progress_tx` when
-    ///   HTTP download is implemented.
+    /// - `progress_tx` – sender end of the progress channel.
+    #[allow(dead_code)]
     pub fn new(progress_tx: mpsc::Sender<DownloadProgress>) -> Self {
         Self {
             jobs: VecDeque::new(),
             progress_tx,
+            db_path: None,
+        }
+    }
+
+    /// Create a new, empty `DownloadQueue` **with** SQLite persistence.
+    ///
+    /// Each [`enqueue`][Self::enqueue] call upserts the job into the
+    /// `downloads` table.  Each terminal status transition (Complete, Failed,
+    /// Cancelled) updates the row via a fire-and-forget background thread so
+    /// the GTK main thread is never blocked.
+    ///
+    /// # Parameters
+    /// - `progress_tx` – sender end of the progress channel.
+    /// - `db_path`     – path to the SQLite database file (will be created if
+    ///   absent, including parent directories, by SQLite itself).
+    pub fn new_with_db(
+        progress_tx: mpsc::Sender<DownloadProgress>,
+        db_path: std::path::PathBuf,
+    ) -> Self {
+        Self {
+            jobs: VecDeque::new(),
+            progress_tx,
+            db_path: Some(db_path),
         }
     }
 
@@ -211,7 +248,7 @@ impl DownloadQueue {
         self.jobs.push_back(DownloadJob {
             id,
             url: url.clone(),
-            mod_name,
+            mod_name: mod_name.clone(),
             dest: dest.clone(),
             status: DownloadStatus::Queued,
         });
@@ -219,6 +256,28 @@ impl DownloadQueue {
             id,
             status: DownloadStatus::Queued,
         });
+
+        // ── Persist to SQLite (fire-and-forget background thread) ─────
+        if let Some(db_path) = self.db_path.clone() {
+            let persisted = mantle_core::data::downloads::PersistedDownload {
+                id: id.to_string(),
+                url: url.clone(),
+                filename: mod_name.clone(),
+                dest_path: dest.display().to_string(),
+                status: "queued".to_string(),
+                progress: 0.0,
+                total_bytes: None,
+                added_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64,
+            };
+            std::thread::spawn(move || {
+                if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                    let _ = mantle_core::data::downloads::upsert_download(&conn, &persisted);
+                }
+            });
+        }
 
         // ── Real HTTP download (net feature only) ─────────────────────
         #[cfg(feature = "net")]
@@ -332,7 +391,40 @@ impl DownloadQueue {
     ///   channel.
     pub fn apply_progress(&mut self, progress: DownloadProgress) {
         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == progress.id) {
-            job.status = progress.status;
+            job.status = progress.status.clone();
+        } else {
+            return;
+        }
+
+        // ── Persist terminal status to SQLite (fire-and-forget) ───────
+        let is_terminal = matches!(
+            progress.status,
+            DownloadStatus::Complete { .. }
+                | DownloadStatus::Failed(_)
+                | DownloadStatus::Cancelled
+        );
+        if is_terminal {
+            if let Some(db_path) = self.db_path.clone() {
+                let status_str = match &progress.status {
+                    DownloadStatus::Complete { .. } => "complete",
+                    DownloadStatus::Failed(_) => "failed",
+                    DownloadStatus::Cancelled => "cancelled",
+                    _ => return,
+                };
+                let prog = match &progress.status {
+                    DownloadStatus::Complete { .. } => 1.0_f64,
+                    _ => 0.0_f64,
+                };
+                let id_str = progress.id.to_string();
+                let status_str = status_str.to_string();
+                std::thread::spawn(move || {
+                    if let Ok(conn) = rusqlite::Connection::open(&db_path) {
+                        let _ = mantle_core::data::downloads::update_download_status(
+                            &conn, &id_str, &status_str, prog,
+                        );
+                    }
+                });
+            }
         }
     }
 

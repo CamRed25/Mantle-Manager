@@ -118,8 +118,9 @@ pub fn build_ui(
     // DownloadProgress messages; the second idle loop drains `progress_rx`
     // and calls apply_progress() so status is reflected without a full reload.
     let (progress_tx, progress_rx) = std::sync::mpsc::channel::<DownloadProgress>();
-    let queue_rc: Rc<RefCell<DownloadQueue>> =
-        Rc::new(RefCell::new(DownloadQueue::new(progress_tx)));
+    let queue_rc: Rc<RefCell<DownloadQueue>> = Rc::new(RefCell::new(
+        DownloadQueue::new_with_db(progress_tx, mantle_core::config::default_db_path()),
+    ));
 
     // Shared steam_app_id: set by the idle callback when live state arrives;
     // read by the launch button callback.  Rc<Cell<…>> is safe for the GTK
