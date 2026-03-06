@@ -204,6 +204,21 @@ pub trait MantlePlugin: Send + Sync {
     fn settings(&self) -> Vec<PluginSetting> {
         vec![]
     }
+
+    /// Called by the host on every event that fires on the shared [`EventBus`].
+    ///
+    /// The default implementation is a no-op. Override to react to any
+    /// [`ModManagerEvent`] without needing to call [`PluginContext::subscribe`]
+    /// inside `init`. Note that subscriptions created via `ctx.subscribe` and
+    /// this method are both active simultaneously — they are not exclusive.
+    ///
+    /// # Parameters
+    /// - `event`: The event that was just published on the global EventBus.
+    ///
+    /// # Notes
+    /// - Called synchronously on the publishing thread. Must not block.
+    /// - Panics inside this method are caught by the registry and logged.
+    fn on_event(&self, _event: &ModManagerEvent) {}
 }
 
 // ─── PluginContext ────────────────────────────────────────────────────────────
@@ -476,28 +491,36 @@ impl PluginContext {
 
     /// Update the internal mod list. Called by the host after a mod state change.
     ///
+    /// Wired by [`PluginRegistry::subscribe_lifecycle_hooks`] to fire whenever
+    /// a `ModInstalled`, `ModEnabled`, or `ModDisabled` event propagates.
+    ///
     /// # Parameters
     /// - `list`: Fresh snapshot of the mod list.
-    // No callers yet — wired when PluginRegistry dispatches EventBus state-change
-    // notifications back through each loaded plugin's context.
-    // See futures.md "Plugin lifecycle hooks".
-    #[allow(dead_code)]
     pub(crate) fn update_mod_list(&self, list: Vec<ModInfo>) {
         *self.mod_list.write().expect("PluginContext: mod_list lock poisoned") = list;
     }
 
-    /// Update the active profile. Called by the host on profile switch.
+    /// Update the active profile. Called by the host on a `ProfileChanged` event.
+    ///
+    /// Wired by [`PluginRegistry::subscribe_lifecycle_hooks`].
     ///
     /// # Parameters
     /// - `profile`: New active profile name.
-    // No callers yet — wired when PluginRegistry handles the ProfileChanged EventBus event.
-    // See futures.md "Plugin lifecycle hooks".
-    #[allow(dead_code)]
     pub(crate) fn update_active_profile(&self, profile: impl Into<String>) {
         *self
             .active_profile
             .write()
             .expect("PluginContext: active_profile lock poisoned") = profile.into();
+    }
+
+    /// Update the detected game. Called by the host on a `GameLaunching` event.
+    ///
+    /// Wired by [`PluginRegistry::subscribe_lifecycle_hooks`].
+    ///
+    /// # Parameters
+    /// - `game`: Updated game information, or `None` if no game is detected.
+    pub(crate) fn update_game(&self, game: Option<GameInfo>) {
+        *self.game.write().expect("PluginContext: game lock poisoned") = game;
     }
 
     // ── Test helpers ──────────────────────────────────────────────────────────

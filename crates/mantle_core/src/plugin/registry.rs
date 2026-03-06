@@ -22,7 +22,7 @@ use std::{
     collections::{HashMap, HashSet},
     panic::{self, AssertUnwindSafe},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use serde::Deserialize;
@@ -31,8 +31,9 @@ use tracing::{info, warn};
 use crate::{error::MantleError, game::GameInfo};
 
 use super::{
-    native::load_native_plugin, scripted::load_scripted_plugin, Capability, EventBus, MantlePlugin,
-    ModInfo, PluginContext, PluginError, SettingValue,
+    native::load_native_plugin, scripted::load_scripted_plugin, Capability, EventBus,
+    EventFilter, MantlePlugin, ModInfo, ModManagerEvent, PluginContext, PluginError, SettingValue,
+    SubscriptionHandle,
 };
 
 // ─── plugin.toml manifest types ───────────────────────────────────────────────
@@ -146,7 +147,6 @@ struct LoadedPlugin {
     plugin: Box<dyn MantlePlugin>,
     /// The context that was handed to `init`. Kept alive so the plugin can
     /// continue using it after init returns.
-    #[allow(dead_code)]
     context: Arc<PluginContext>,
     /// Filesystem path from which this plugin was loaded (for diagnostics).
     path: PathBuf,
@@ -178,6 +178,17 @@ pub struct PluginRegistry {
     /// Per-plugin writable data dirs live at
     /// `{base_data_dir}/plugin-data/{plugin_id}/`.
     base_data_dir: PathBuf,
+    /// Shared list of all loaded plugin contexts.
+    ///
+    /// Captured by the lifecycle subscription closures so they can update
+    /// every context snapshot when `ProfileChanged` or `GameLaunching`
+    /// fires.  Also cleared by [`unload_all`][Self::unload_all].
+    contexts: Arc<Mutex<Vec<Arc<PluginContext>>>>,
+    /// Subscription handles for the host-side lifecycle hooks.
+    ///
+    /// Kept alive for as long as the registry is live. Dropped (and
+    /// unsubscribed) by [`unload_all`][Self::unload_all].
+    lifecycle_handles: Vec<SubscriptionHandle>,
 }
 
 impl PluginRegistry {
@@ -199,6 +210,8 @@ impl PluginRegistry {
             plugins: Vec::new(),
             event_bus,
             base_data_dir: base_data_dir.into(),
+            contexts: Arc::new(Mutex::new(Vec::new())),
+            lifecycle_handles: Vec::new(),
         }
     }
 
@@ -280,22 +293,38 @@ impl PluginRegistry {
                 &mut seen_ids,
                 &mut errors,
             ) {
+                // Capture the context reference for lifecycle hook dispatch
+                // before moving the LoadedPlugin into self.plugins.
+                self.contexts
+                    .lock()
+                    .expect("PluginRegistry: context list lock poisoned")
+                    .push(Arc::clone(&loaded.context));
                 self.plugins.push(loaded);
             }
         }
+
+        // Wire lifecycle hooks now that all contexts are registered.
+        self.subscribe_lifecycle_hooks();
 
         errors
     }
 
     /// Shut down and remove all loaded plugins.
     ///
-    /// Calls [`MantlePlugin::shutdown`] on every plugin in **reverse** load
-    /// order (last loaded → first unloaded), then clears the internal list.
+    /// 1. Drops all [`SubscriptionHandle`]s created by
+    ///    [`subscribe_lifecycle_hooks`][Self::subscribe_lifecycle_hooks],
+    ///    unsubscribing the host-side lifecycle hooks from the event bus.
+    /// 2. Calls [`MantlePlugin::shutdown`] on every plugin in **reverse** load
+    ///    order (last loaded → first unloaded).
+    /// 3. Clears the shared context list.
     ///
     /// # Side Effects
     /// After this call `self.plugins` is empty and `plugin_count()` returns 0.
     pub fn unload_all(&mut self) {
-        // Reverse order shutdown mirrors typical LIFO stack semantics.
+        // 1. Unsubscribe host lifecycle hooks before invoking plugin shutdowns.
+        self.lifecycle_handles.clear();
+
+        // 2. Reverse order shutdown mirrors typical LIFO stack semantics.
         for loaded in self.plugins.drain(..).rev() {
             let mut plugin = loaded.plugin;
             info!(
@@ -305,6 +334,64 @@ impl PluginRegistry {
             );
             plugin.shutdown();
         }
+
+        // 3. Release context references held by the registry.
+        self.contexts
+            .lock()
+            .expect("PluginRegistry: context list lock poisoned")
+            .clear();
+    }
+
+    /// Subscribe host-side lifecycle hooks to the shared event bus.
+    ///
+    /// Called automatically by [`load_dir`][Self::load_dir] after all plugins
+    /// are initialised.  Wires two subscriptions:
+    ///
+    /// - **`ProfileChanged`** → calls
+    ///   [`PluginContext::update_active_profile`] on every loaded context,
+    ///   keeping the `active_profile` snapshot current.
+    /// - **`GameLaunching`** → calls [`PluginContext::update_game`] on every
+    ///   loaded context, so plugins see the current game.
+    ///
+    /// The returned [`SubscriptionHandle`]s are stored in `lifecycle_handles`
+    /// and dropped (unsubscribed) by [`unload_all`][Self::unload_all].
+    ///
+    /// Calling this method again removes the old handles first to avoid
+    /// duplicate subscriptions (e.g. if `load_dir` is called more than once).
+    pub fn subscribe_lifecycle_hooks(&mut self) {
+        // Remove any previously registered handles to avoid duplicate firings.
+        self.lifecycle_handles.clear();
+
+        // ── ProfileChanged → update active_profile snapshot ──────────────────
+        let ctxs = Arc::clone(&self.contexts);
+        let h_profile = self.event_bus.subscribe(
+            EventFilter::ProfileChanged,
+            move |event| {
+                if let ModManagerEvent::ProfileChanged { new, .. } = event {
+                    let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
+                    for ctx in list.iter() {
+                        ctx.update_active_profile(new.clone());
+                    }
+                }
+            },
+        );
+
+        // ── GameLaunching → update game snapshot ──────────────────────────────
+        let ctxs = Arc::clone(&self.contexts);
+        let h_game = self.event_bus.subscribe(
+            EventFilter::GameLaunching,
+            move |event| {
+                if let ModManagerEvent::GameLaunching(game) = event {
+                    let list = ctxs.lock().expect("lifecycle hook: context list poisoned");
+                    for ctx in list.iter() {
+                        ctx.update_game(Some(game.clone()));
+                    }
+                }
+            },
+        );
+
+        self.lifecycle_handles.push(h_profile);
+        self.lifecycle_handles.push(h_game);
     }
 
     /// Number of successfully loaded plugins.
@@ -824,5 +911,111 @@ required = ["notifications"]
         let errors = reg.load_dir(&plugins_dir, &[], "default", &["default".to_owned()], None);
         assert!(errors.is_empty());
         assert_eq!(reg.plugin_count(), 0);
+    }
+
+    // ── lifecycle hooks ───────────────────────────────────────────────────────
+
+    /// Helper: inject a pre-built context into the registry's context list and
+    /// subscribe lifecycle hooks. Used when we don't have a real plugin to load.
+    fn inject_ctx_and_subscribe(
+        reg: &mut PluginRegistry,
+        ctx: Arc<crate::plugin::PluginContext>,
+    ) {
+        reg.contexts
+            .lock()
+            .expect("test: context list poisoned")
+            .push(ctx);
+        reg.subscribe_lifecycle_hooks();
+    }
+
+    /// `subscribe_lifecycle_hooks` updates `active_profile` on all plugin
+    /// contexts when a `ProfileChanged` event fires on the shared bus.
+    #[test]
+    fn lifecycle_profile_changed_updates_all_contexts() {
+        use crate::plugin::{ModManagerEvent, PluginContext};
+
+        let bus = Arc::new(EventBus::new());
+        let mut reg = PluginRegistry::new(Arc::clone(&bus), std::env::temp_dir());
+
+        let ctx = PluginContext::for_tests();
+        assert_eq!(ctx.active_profile(), "Default");
+
+        inject_ctx_and_subscribe(&mut reg, Arc::clone(&ctx));
+
+        bus.publish(&ModManagerEvent::ProfileChanged {
+            old: "Default".into(),
+            new: "Survival Run".into(),
+        });
+
+        assert_eq!(
+            ctx.active_profile(),
+            "Survival Run",
+            "context snapshot must reflect the new profile name"
+        );
+    }
+
+    /// `subscribe_lifecycle_hooks` updates the `game` snapshot on all plugin
+    /// contexts when a `GameLaunching` event fires on the shared bus.
+    #[test]
+    fn lifecycle_game_launching_updates_all_contexts() {
+        use crate::game::GameKind;
+        use crate::plugin::{ModManagerEvent, PluginContext};
+
+        let bus = Arc::new(EventBus::new());
+        let mut reg = PluginRegistry::new(Arc::clone(&bus), std::env::temp_dir());
+
+        let ctx = PluginContext::for_tests();
+        assert!(ctx.game().is_none(), "game should be None before any event");
+
+        inject_ctx_and_subscribe(&mut reg, Arc::clone(&ctx));
+
+        bus.publish(&ModManagerEvent::GameLaunching(crate::game::GameInfo {
+            slug: "skyrim_se".into(),
+            name: "Skyrim SE".into(),
+            kind: GameKind::SkyrimSE,
+            steam_app_id: 489830,
+            install_path: "/game".into(),
+            data_path: "/game/Data".into(),
+            proton_prefix: None,
+        }));
+
+        assert!(
+            ctx.game().is_some(),
+            "context game snapshot must be populated after GameLaunching"
+        );
+        assert_eq!(ctx.game().unwrap().slug, "skyrim_se");
+    }
+
+    /// `unload_all` drops lifecycle handles and releases the context list.
+    #[test]
+    fn unload_all_clears_lifecycle_handles_and_contexts() {
+        use crate::plugin::{ModManagerEvent, PluginContext};
+
+        let bus = Arc::new(EventBus::new());
+        let mut reg = PluginRegistry::new(Arc::clone(&bus), std::env::temp_dir());
+
+        let ctx = PluginContext::for_tests();
+        inject_ctx_and_subscribe(&mut reg, Arc::clone(&ctx));
+
+        // Two lifecycle handles were registered (ProfileChanged + GameLaunching).
+        assert_eq!(reg.lifecycle_handles.len(), 2);
+
+        reg.unload_all();
+
+        // After unload, the context list is empty and handlers are gone.
+        assert!(reg.contexts.lock().unwrap().is_empty());
+        assert!(reg.lifecycle_handles.is_empty());
+
+        // Publishing an event after unload must not update the now-gone context.
+        let profile_before = ctx.active_profile();
+        bus.publish(&ModManagerEvent::ProfileChanged {
+            old: "Default".into(),
+            new: "Should Not Update".into(),
+        });
+        assert_eq!(
+            ctx.active_profile(),
+            profile_before,
+            "unloaded context must not be updated by post-unload events"
+        );
     }
 }
