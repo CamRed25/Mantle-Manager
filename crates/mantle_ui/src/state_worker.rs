@@ -18,7 +18,8 @@
 //! — and the UI will show its empty-state widgets.
 //!
 //! # Deferred fields
-//! The following [`AppState`] fields are still incomplete:
+//! The following [`AppState`] fields are still incomplete.
+//! See futures.md "State worker detection" for implementation notes.
 //! - `game_version` — requires reading the game EXE or Steam manifest.
 //! - `launch_target` — currently mirrors `game_name`; proper xSE detection deferred.
 //! - `downloads` — the download queue lives in-memory; no DB persistence yet.
@@ -264,7 +265,8 @@ fn load_state() -> anyhow::Result<AppState> {
             Some(g.steam_app_id),
             g.name.clone(),
             // Use the game's short display name as the launch target until
-            // xSE / custom launch-target detection is added (deferred).
+            // xSE / custom launch-target detection is added.
+            // See futures.md "State worker detection".
             g.name.clone(),
         )
     } else {
@@ -280,7 +282,7 @@ fn load_state() -> anyhow::Result<AppState> {
         steam_app_id,
         game_name,
         // Version string requires reading the game EXE or a manifest;
-        // deferred to the game-version detection pass.
+        // deferred — see futures.md "State worker detection".
         game_version: String::new(),
         launch_target,
         active_profile: active_profile_name,
@@ -291,6 +293,7 @@ fn load_state() -> anyhow::Result<AppState> {
         mods: mod_entries,
         profiles: profile_entries,
         // Download queue lives in-memory only; no DB persistence yet.
+        // See futures.md "State worker detection".
         downloads: vec![],
         plugins: plugin_entries,
         themes: load_themes(&settings.ui.theme),

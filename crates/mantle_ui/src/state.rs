@@ -1,3 +1,9 @@
+//! Application state types shared across the UI layer.
+//!
+//! Defines [`AppState`] (the snapshot delivered from `state_worker` to all
+//! page builders on each refresh), plus the auxiliary types it carries:
+//! [`ModEntry`], [`ProfileEntry`], [`DownloadEntry`], [`DownloadStatus`],
+//! [`PluginEntry`], and [`PluginSettingEntry`].
 use std::path::PathBuf;
 
 /// Snapshot of application state used to populate widgets.

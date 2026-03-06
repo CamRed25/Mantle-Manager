@@ -478,6 +478,9 @@ impl PluginContext {
     ///
     /// # Parameters
     /// - `list`: Fresh snapshot of the mod list.
+    // No callers yet — wired when PluginRegistry dispatches EventBus state-change
+    // notifications back through each loaded plugin's context.
+    // See futures.md "Plugin lifecycle hooks".
     #[allow(dead_code)]
     pub(crate) fn update_mod_list(&self, list: Vec<ModInfo>) {
         *self.mod_list.write().expect("PluginContext: mod_list lock poisoned") = list;
@@ -487,6 +490,8 @@ impl PluginContext {
     ///
     /// # Parameters
     /// - `profile`: New active profile name.
+    // No callers yet — wired when PluginRegistry handles the ProfileChanged EventBus event.
+    // See futures.md "Plugin lifecycle hooks".
     #[allow(dead_code)]
     pub(crate) fn update_active_profile(&self, profile: impl Into<String>) {
         *self
@@ -526,19 +531,6 @@ impl PluginContext {
 mod tests {
     use super::super::event::ModManagerEvent;
     use super::*;
-    use crate::game::GameKind;
-
-    fn game_info() -> GameInfo {
-        GameInfo {
-            slug: "skyrim_se".into(),
-            name: "Skyrim SE".into(),
-            kind: GameKind::SkyrimSE,
-            steam_app_id: 489830,
-            install_path: "/game".into(),
-            data_path: "/game/Data".into(),
-            proton_prefix: None,
-        }
-    }
 
     fn mod_info(slug: &str, enabled: bool) -> ModInfo {
         ModInfo {

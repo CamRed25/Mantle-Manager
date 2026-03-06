@@ -256,6 +256,7 @@ mod tests {
         )
         .unwrap();
         for (idx, &mid) in mod_ids.iter().enumerate() {
+            // usize-to-i64 cast; priority index never exceeds i64::MAX on any supported platform.
             #[allow(clippy::cast_possible_wrap)]
             let priority = idx as i64 + 1;
             conn.execute(

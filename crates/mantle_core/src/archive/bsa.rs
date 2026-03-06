@@ -351,7 +351,10 @@ fn normalise_path(raw: &str) -> String {
 ///
 /// # Returns
 /// The joined path, or a [`MantleError::Archive`] if `rel` would escape `dest`.
-#[allow(dead_code)] // Retained for future use by streaming extractors.
+// Retained as a tested security primitive — path-traversal guard for any extraction
+// path that constructs a destination PathBuf directly from archive-stored names.
+// See futures.md "BSA streaming extractor".
+#[allow(dead_code)]
 fn safe_join(dest: &Path, rel: &str) -> Result<PathBuf, MantleError> {
     use std::path::Component;
     // Reject paths with any ".." component before joining — std::Path::starts_with

@@ -1,3 +1,8 @@
+//! Right-hand sidebar widget.
+//!
+//! Builds the always-visible summary panel showing active downloads,
+//! profile name, mod count, and overlay backend status. Re-built on
+//! every [`AppState`] refresh delivered by `state_worker`.
 use adw::prelude::*;
 use gtk4::{Box as GtkBox, Label, ListBox, Orientation, ProgressBar, ScrolledWindow, Separator};
 use libadwaita as adw;

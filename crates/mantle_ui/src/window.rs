@@ -68,6 +68,9 @@ use crate::{
 /// - Applies the saved color-scheme preference via [`settings::apply_theme`].
 /// - Launches background game detection + DB load (see [`state_worker::spawn`]).
 /// - Presents the main window.
+// Top-level GTK4 application window builder; all widgets are created and wired
+// here in sequence. Sub-function extraction would require passing all widget
+// handles as parameters, increasing coupling without improving readability.
 #[allow(clippy::too_many_lines)]
 pub fn build_ui(app: &adw::Application) {
     // Apply saved color scheme before any widgets render so the first frame

@@ -92,12 +92,10 @@ pub struct FuseOverlay {
     child: std::process::Child,
     /// Upper directory — game writes land here (copy-on-write), leaving mod
     /// source files unmodified. Held for RAII deletion on drop.
-    #[allow(dead_code)]
-    upper_dir: tempfile::TempDir,
+    _upper_dir: tempfile::TempDir,
     /// Work directory required by overlayfs for atomic rename bookkeeping.
     /// Held for RAII deletion on drop.
-    #[allow(dead_code)]
-    work_dir: tempfile::TempDir,
+    _work_dir: tempfile::TempDir,
     /// Merged view directory presented to the game process.
     merge_dir: PathBuf,
 }
@@ -167,8 +165,8 @@ impl FuseOverlay {
 
         Ok(Self {
             child,
-            upper_dir,
-            work_dir,
+            _upper_dir: upper_dir,
+            _work_dir: work_dir,
             merge_dir: params.merge_dir.clone(),
         })
     }
@@ -218,7 +216,7 @@ impl FuseOverlay {
             )));
         }
         let _ = self.child.wait();
-        // upper_dir and work_dir drop here → deleted from disk.
+        // _upper_dir and _work_dir drop here → deleted from disk.
         Ok(())
     }
 }

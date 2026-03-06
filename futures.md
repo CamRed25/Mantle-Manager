@@ -59,6 +59,49 @@
 
 ## Technical Debt & Refactoring
 
+### Plugin lifecycle hooks — update_mod_list / update_active_profile
+- **Date:** 2026-03-05
+- **Reference:** `crates/mantle_core/src/plugin/context.rs`, PLUGIN_API.md §5
+- `PluginContext::update_mod_list(list)` and `PluginContext::update_active_profile(profile)` are
+  `pub(crate)` host-facing mutators that keep the plugin's read-only view of core state consistent.
+  They have no callers yet because `PluginRegistry::load_dir` does not yet dispatch state-change
+  notifications back through each plugin's context.  When `ModInstalled`, `ModEnabled`,
+  `ModDisabled`, and `ProfileChanged` events are wired, `PluginRegistry` should hold
+  `Arc<PluginContext>` per loaded plugin and call these mutators so scripts/plugins observe
+  consistent state without querying core directly.
+  - Next step: call `ctx.update_mod_list(mod_list)` inside the `PluginRegistry`'s
+    `EventBus` subscriber for `ModInstalled/Enabled/Disabled` events.
+  - Next step: call `ctx.update_active_profile(name)` inside the `ProfileChanged` handler.
+
+### BSA streaming extractor — safe_join helper retained
+- **Date:** 2026-03-05
+- **Reference:** `crates/mantle_core/src/archive/bsa.rs`, ARCHITECTURE.md §4.3
+- `safe_join(dest, rel)` in `archive/bsa.rs` rejects path-traversal components (`..`) before joining
+  a relative archive path onto an extraction root.  It is retained as a tested security primitive
+  rather than moved to `doa/` because it will be called directly by streaming BSA/BA2 extractors.
+  Current extractors (`extract_bsa`, `extract_ba2`) use the `ba2` crate's own file-name API which
+  does not produce `..` components; when a custom streaming path is added (byte-range extraction,
+  incremental VFS seeding) `safe_join` will guard every write destination.
+  - Next step: call `safe_join` from any new extraction path that constructs a destination
+    `PathBuf` directly from archive-stored relative names.
+
+### State worker detection — game_version, launch_target, DB persistence
+- **Date:** 2026-03-05
+- **Reference:** `crates/mantle_ui/src/state_worker.rs`, PLATFORM_COMPAT.md §6
+- Three `AppState` fields are incomplete in `state_worker::load_state`:
+  1. `game_version` — filled with `String::new()` because reading the game version requires
+     parsing the game EXE (PE `VS_VERSION_INFO` resource) or a Steam `appmanifest` file.
+     `mantle_core::game::steam::detect_game_at_path` detects the game folder but does not
+     walk into EXE metadata.  A `game::version::read_game_version(game_path) -> Option<String>`
+     function is the target.
+  2. `launch_target` — mirrors `game_name` until xSE/SKSE detection tells us whether to launch
+     the vanilla EXE or route through the script-extender loader.  Use the SKSE installer output
+     (`skse/version.rs::installed_version`) to conditionally override `launch_target` when SKSE
+     is present.
+  3. `downloads` — the `DownloadQueue` lives entirely in memory; jobs are lost on process restart.
+     Add a `downloads` table query (schema already has the table) once the download pipeline
+     writes rows to the DB on `enqueue` / on state change.
+
 ### Download HTTP fetch implementation
 - **Date:** 2026-03-05
 - **Reference:** `path.md` §a, `crates/mantle_ui/src/downloads/queue.rs`

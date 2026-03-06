@@ -1,9 +1,12 @@
-/// In-memory download queue: stores [`DownloadJob`] entries and exposes the
-/// CRUD operations called by the downloads page buttons.
-///
-/// When compiled with the `net` feature, [`DownloadQueue::enqueue`] spawns a
-/// real HTTP download task via `mantle_net`.  Without `net` every job
-/// immediately fails with a "not implemented" message (scaffolding behaviour).
+//! In-memory download queue: stores [`DownloadJob`] entries and exposes the
+//! CRUD operations called by the downloads page buttons.
+//!
+//! When compiled with the `net` feature, [`DownloadQueue::enqueue`] spawns a
+//! real HTTP download task via `mantle_net`.  Without `net` every job
+//! immediately fails with a "not implemented" message.
+//!
+//! See futures.md "Download HTTP fetch implementation" for the full
+//! implementation plan.
 use std::{collections::VecDeque, path::PathBuf, sync::mpsc};
 
 use uuid::Uuid;
@@ -106,6 +109,8 @@ fn spawn_download(
             &dest,
             move |ev| {
                 let mantle_net::download::DownloadEvent::Progress { downloaded, total } = ev;
+                // f64 progress ratio from u64 byte counts; sub-byte precision loss is
+                // acceptable for a 0.0–1.0 display value.
                 #[allow(clippy::cast_precision_loss)]
                 let progress = total.map_or(0.0, |t| downloaded as f64 / t as f64);
                 let _ = tx.send(DownloadProgress {
@@ -175,7 +180,10 @@ impl DownloadQueue {
     /// With the `net` feature enabled, spawns a background OS thread that
     /// streams the file from `url` and sends [`DownloadProgress`] updates
     /// back to the idle-poll loop.  Without `net`, the job immediately
-    /// transitions to `Failed` (scaffolding behaviour).
+    /// transitions to `Failed`.
+    ///
+    /// See futures.md "Download HTTP fetch implementation" for when the HTTP
+    /// layer will be implemented.
     ///
     /// # Parameters
     /// - `url`      – remote HTTPS URL to fetch.
@@ -184,9 +192,9 @@ impl DownloadQueue {
     ///
     /// # Returns
     /// The [`Uuid`] assigned to the new job.
-    // Will be called from the downloads page once item-14 wires the UI.
-    // `dest` is consumed by `spawn_download` in the `net` feature path;
-    // without `net` it is only cloned, causing a needless-pass-by-value warning.
+    // UI button for enqueue is wired in window.rs; `dest` is consumed by
+    // `spawn_download` in the `net` feature path; without `net` it is only
+    // cloned, causing a needless-pass-by-value warning.
     #[allow(dead_code)]
     #[cfg_attr(not(feature = "net"), allow(clippy::needless_pass_by_value))]
     pub fn enqueue(
@@ -216,7 +224,7 @@ impl DownloadQueue {
         #[cfg(feature = "net")]
         spawn_download(id, url, dest, self.progress_tx.clone());
 
-        // ── Stub: immediately fail when net feature is absent ─────────
+        // ── Stub: immediately fail when net feature is absent (see futures.md "Download HTTP fetch implementation") ─
         #[cfg(not(feature = "net"))]
         {
             let status = DownloadStatus::Failed("HTTP fetch not yet implemented".to_string());
@@ -258,9 +266,9 @@ impl DownloadQueue {
     /// Transitions the job's status to [`DownloadStatus::Queued`].
     /// Jobs that are not in `Failed` or `Cancelled` state are left unchanged.
     ///
-    /// **Scaffolding**: re-queuing will immediately fail again because
-    /// `enqueue` does not start real HTTP workers yet.  A direct status
-    /// write is used here so the job stays in the existing queue position.
+    /// Without the `net` feature, re-queuing immediately fails again because
+    /// no HTTP worker is started.  See futures.md "Download HTTP fetch
+    /// implementation" for the full implementation plan.
     ///
     /// # Parameters
     /// - `id` – the UUID of the job to retry.
@@ -354,6 +362,8 @@ impl DownloadQueue {
 
     /// Return a reference to the channel sender so future download worker
     /// code can clone it when spawning background tasks.
+    // Retained as the natural API surface for net-feature progress wiring;
+    // no caller yet — see futures.md "Download HTTP fetch implementation".
     #[allow(dead_code)]
     pub(crate) fn progress_tx(&self) -> &mpsc::Sender<DownloadProgress> {
         &self.progress_tx

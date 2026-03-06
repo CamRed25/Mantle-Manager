@@ -11,11 +11,11 @@
 //!
 //! # Usage
 //! ```no_run
-//! # tokio_test::block_on(async {
+//! # async fn _example() {
 //! use mantle_net::nexus::NexusClient;
 //! let client = NexusClient::new("my-api-key").unwrap();
 //! let mods = client.search("skyrimspecialedition", "SKSE", 3171).await.unwrap();
-//! # });
+//! # }
 //! ```
 
 pub mod models;

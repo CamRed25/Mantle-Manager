@@ -201,7 +201,7 @@ fn is_mount_point(path: &Path) -> bool {
 /// # Teardown
 /// Always call [`KernelOverlay::unmount`]. No `Drop`-based cleanup: `umount2`
 /// can fail and `Drop` cannot propagate errors.
-// clippy::struct_field_names: fields `upper_dir`, `work_dir`, and `merge_dir` intentionally
+// clippy::struct_field_names: fields `_upper_dir`, `_work_dir`, and `merge_dir` intentionally
 // carry the `_dir` suffix for clarity — removing it yields `upper`, `work`, and `merge`,
 // which are ambiguous without the type context.
 #[allow(clippy::struct_field_names)]
@@ -209,12 +209,10 @@ fn is_mount_point(path: &Path) -> bool {
 pub struct KernelOverlay {
     /// Upper directory — game writes land here (copy-on-write).
     /// Held for RAII deletion on drop.
-    #[allow(dead_code)]
-    upper_dir: tempfile::TempDir,
+    _upper_dir: tempfile::TempDir,
     /// Overlayfs work directory (internal kernel bookkeeping for renames).
     /// Held for RAII deletion on drop.
-    #[allow(dead_code)]
-    work_dir: tempfile::TempDir,
+    _work_dir: tempfile::TempDir,
     /// Merged view directory.
     merge_dir: PathBuf,
 }
@@ -279,8 +277,8 @@ impl KernelOverlay {
 
         tracing::debug!("KernelOverlay: mounted at {}", params.merge_dir.display());
         Ok(Self {
-            upper_dir,
-            work_dir,
+            _upper_dir: upper_dir,
+            _work_dir: work_dir,
             merge_dir: params.merge_dir.clone(),
         })
     }
@@ -308,7 +306,7 @@ impl KernelOverlay {
     pub fn unmount(self) -> Result<(), MantleError> {
         nix::mount::umount2(&self.merge_dir, nix::mount::MntFlags::MNT_DETACH)
             .map_err(|e| MantleError::Vfs(format!("umount2({}): {e}", self.merge_dir.display())))?;
-        // upper_dir and work_dir drop here → temp directories removed from disk.
+        // _upper_dir and _work_dir drop here → temp directories removed from disk.
         Ok(())
     }
 }

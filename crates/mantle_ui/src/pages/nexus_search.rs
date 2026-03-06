@@ -112,6 +112,9 @@ struct ModContext {
 /// - `queue`         – Shared download queue; mods are enqueued from this page.
 /// - `refresh`       – Called after each enqueue so the Downloads page updates.
 /// - `toast_overlay` – Used to surface error and confirmation toasts.
+// GTK4 builder pattern: all widgets are created inline and wired together;
+// sub-function extraction would require threading every handle through parameters,
+// increasing coupling without improving readability.
 #[allow(clippy::too_many_lines)]
 pub fn build(
     queue: &Rc<RefCell<DownloadQueue>>,
@@ -571,6 +574,7 @@ fn make_file_row(
     info.append(&fname);
 
     let version_str = file.version.as_deref().unwrap_or("?");
+    // KB-to-MB conversion for display; sub-byte precision loss is acceptable.
     #[allow(clippy::cast_precision_loss)]
     let size_mb = file.size_kb.unwrap_or(0) as f64 / 1024.0;
     let meta_text = format!("v{version_str}  ·  {size_mb:.1} MB");

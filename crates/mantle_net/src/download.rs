@@ -9,7 +9,8 @@
 //! use std::path::Path;
 //! use mantle_net::download::{download_file, DownloadEvent};
 //!
-//! # tokio_test::block_on(async {
+//! # async fn _example() {
+//! let client = reqwest::Client::new();
 //! download_file(
 //!     "https://example.com/mod.zip",
 //!     Path::new("/tmp/mod.zip"),
@@ -18,8 +19,9 @@
 //!             println!("Downloaded {downloaded} / {total:?}");
 //!         }
 //!     },
+//!     &client,
 //! ).await.unwrap();
-//! # });
+//! # }
 //! ```
 
 use std::path::Path;

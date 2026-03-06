@@ -122,6 +122,8 @@ impl RegistryHive {
     /// # Returns
     /// A `RegistryHive` — never fails; unrecognised or malformed lines are
     /// silently skipped.
+    // named `from_str` by convention but cannot implement `FromStr` — return type
+    // is `Self` (never fails) rather than `Result<Self, _>` as the trait requires.
     #[allow(clippy::should_implement_trait)]
     #[must_use]
     pub fn from_str(content: &str) -> Self {
