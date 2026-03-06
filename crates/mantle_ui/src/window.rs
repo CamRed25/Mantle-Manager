@@ -71,8 +71,15 @@ use crate::{
 // Top-level GTK4 application window builder; all widgets are created and wired
 // here in sequence. Sub-function extraction would require passing all widget
 // handles as parameters, increasing coupling without improving readability.
+//
+// `nxm_queue`: shared queue of pending `nxm://` URLs pushed by the
+// `connect_open` handler in `main.rs`.  Drained by the NXM idle loop (net
+// feature only).  Ignored when the net feature is disabled.
 #[allow(clippy::too_many_lines)]
-pub fn build_ui(app: &adw::Application) {
+pub fn build_ui(
+    app: &adw::Application,
+    nxm_queue: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
     // Apply saved color scheme before any widgets render so the first frame
     // uses the correct theme.
     let settings_path = default_settings_path();
@@ -368,6 +375,89 @@ pub fn build_ui(app: &adw::Application) {
         }
         glib::ControlFlow::Continue
     });
+
+    // ── Idle poll: NXM download queue drain (net feature only) ──────────
+    //
+    // The `connect_open` GApplication handler (main.rs) pushes incoming
+    // `nxm://` URIs into `nxm_queue`.  This idle loop drains that queue,
+    // spawns an OS thread per URI to resolve the CDN link via the Nexus API,
+    // then feeds the HTTPS URL to `DownloadQueue::enqueue` once resolved.
+    //
+    // Flow:  nxm_queue (Arc<Mutex<…>>) → OS thread (resolve_nxm) →
+    //        nxm_result_rx → DownloadQueue::enqueue → spawn_download
+    #[cfg(feature = "net")]
+    {
+        let api_key_nxm = initial_settings.network.nexus_api_key.clone();
+        let downloads_dir_nxm = initial_settings
+            .paths
+            .downloads_dir
+            .clone()
+            .unwrap_or_else(|| {
+                let d = mantle_core::config::data_dir().join("downloads");
+                let _ = std::fs::create_dir_all(&d);
+                d
+            });
+        let queue_nxm = Rc::clone(&queue_rc);
+        let (nxm_result_tx, nxm_result_rx) =
+            std::sync::mpsc::channel::<(String, String, std::path::PathBuf)>();
+
+        glib::idle_add_local(move || {
+            use std::sync::mpsc::TryRecvError;
+
+            // Drain pending NXM URLs and spawn resolution OS threads.
+            let pending: Vec<String> = {
+                let mut lock = nxm_queue.lock().expect("nxm_queue lock poisoned");
+                std::mem::take(&mut *lock)
+            };
+            for nxm_url in pending {
+                let tx = nxm_result_tx.clone();
+                let api_key = api_key_nxm.clone();
+                let dest_dir = downloads_dir_nxm.clone();
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("tokio rt for NXM resolution");
+                    match rt.block_on(mantle_net::nexus::resolve_nxm(&nxm_url, &api_key)) {
+                        Ok(cdn_url) => {
+                            // Derive filename from CDN URL path; strip query params.
+                            let filename = cdn_url
+                                .rsplit('/')
+                                .next()
+                                .and_then(|s| s.split('?').next())
+                                .unwrap_or("mod_download.bin")
+                                .to_string();
+                            let dest = dest_dir.join(&filename);
+                            let _ = tx.send((cdn_url, filename, dest));
+                        }
+                        Err(e) => {
+                            tracing::error!(%e, "NXM resolution failed");
+                        }
+                    }
+                });
+            }
+
+            // Drain resolved URLs and enqueue real downloads (GTK thread).
+            loop {
+                match nxm_result_rx.try_recv() {
+                    Ok((cdn_url, filename, dest)) => {
+                        queue_nxm.borrow_mut().enqueue(cdn_url, filename, dest);
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        return glib::ControlFlow::Break;
+                    }
+                }
+            }
+
+            glib::ControlFlow::Continue
+        });
+    }
+
+    // Consume `nxm_queue` without the net feature so the compiler does not
+    // emit an unused-variable warning.
+    #[cfg(not(feature = "net"))]
+    let _ = nxm_queue;
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
