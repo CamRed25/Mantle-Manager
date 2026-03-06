@@ -6,7 +6,7 @@
 //! immediately fails with a "not implemented" message.
 //!
 //! When a `db_path` is supplied (via [`DownloadQueue::new_with_db`]), each
-//! enqueue call and each terminal status transition is persisted to SQLite so
+//! enqueue call and each terminal status transition is persisted to `SQLite` so
 //! downloads survive an application restart.
 //!
 //! See futures.md "Download HTTP fetch implementation" for the full
@@ -151,7 +151,7 @@ fn spawn_download(
 /// communicate back via the [`mpsc::Sender<DownloadProgress>`] channel.
 ///
 /// When `db_path` is `Some`, each enqueue call and each terminal status
-/// transition is persisted to the SQLite database so downloads survive
+/// transition is persisted to the `SQLite` database so downloads survive
 /// an application restart.
 pub struct DownloadQueue {
     /// Ordered list of all jobs (active + historical).
@@ -159,7 +159,7 @@ pub struct DownloadQueue {
     /// Sender half given to future background tasks so they can push progress
     /// updates back to the UI idle loop.
     progress_tx: mpsc::Sender<DownloadProgress>,
-    /// Optional SQLite database path for persisting download state across
+    /// Optional `SQLite` database path for persisting download state across
     /// application restarts.  `None` means no persistence (tests / offline
     /// builds).
     db_path: Option<std::path::PathBuf>,
@@ -170,7 +170,7 @@ impl DownloadQueue {
     // Construction
     // -----------------------------------------------------------------------
 
-    /// Create a new, empty `DownloadQueue` **without** SQLite persistence.
+    /// Create a new, empty `DownloadQueue` **without** `SQLite` persistence.
     ///
     /// Suitable for unit tests or any code path that does not need to survive
     /// a restart.  Use [`Self::new_with_db`] for production use.
@@ -186,7 +186,7 @@ impl DownloadQueue {
         }
     }
 
-    /// Create a new, empty `DownloadQueue` **with** SQLite persistence.
+    /// Create a new, empty `DownloadQueue` **with** `SQLite` persistence.
     ///
     /// Each [`enqueue`][Self::enqueue] call upserts the job into the
     /// `downloads` table.  Each terminal status transition (Complete, Failed,
@@ -195,8 +195,8 @@ impl DownloadQueue {
     ///
     /// # Parameters
     /// - `progress_tx` – sender end of the progress channel.
-    /// - `db_path`     – path to the SQLite database file (will be created if
-    ///   absent, including parent directories, by SQLite itself).
+    /// - `db_path`     – path to the `SQLite` database file (will be created if
+    ///   absent, including parent directories, by `SQLite` itself).
     pub fn new_with_db(
         progress_tx: mpsc::Sender<DownloadProgress>,
         db_path: std::path::PathBuf,
@@ -259,6 +259,12 @@ impl DownloadQueue {
 
         // ── Persist to SQLite (fire-and-forget background thread) ─────
         if let Some(db_path) = self.db_path.clone() {
+            // Epoch seconds fit comfortably in i64 until the year 292,277,026,596.
+            #[allow(clippy::cast_possible_wrap)]
+            let added_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64;
             let persisted = mantle_core::data::downloads::PersistedDownload {
                 id: id.to_string(),
                 url: url.clone(),
@@ -267,10 +273,7 @@ impl DownloadQueue {
                 status: "queued".to_string(),
                 progress: 0.0,
                 total_bytes: None,
-                added_at: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64,
+                added_at,
             };
             std::thread::spawn(move || {
                 if let Ok(conn) = rusqlite::Connection::open(&db_path) {
@@ -389,7 +392,7 @@ impl DownloadQueue {
     /// # Parameters
     /// - `progress` – the [`DownloadProgress`] message received from the
     ///   channel.
-    pub fn apply_progress(&mut self, progress: DownloadProgress) {
+    pub fn apply_progress(&mut self, progress: &DownloadProgress) {
         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == progress.id) {
             job.status = progress.status.clone();
         } else {

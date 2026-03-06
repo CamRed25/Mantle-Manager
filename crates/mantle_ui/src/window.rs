@@ -78,7 +78,7 @@ use crate::{
 #[allow(clippy::too_many_lines)]
 pub fn build_ui(
     app: &adw::Application,
-    nxm_queue: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    nxm_queue: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 ) {
     // Apply saved color scheme before any widgets render so the first frame
     // uses the correct theme.
@@ -359,7 +359,7 @@ pub fn build_ui(
         loop {
             match progress_rx.try_recv() {
                 Ok(prog) => {
-                    queue_prog.borrow_mut().apply_progress(prog);
+                    queue_prog.borrow_mut().apply_progress(&prog);
                     had_updates = true;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -388,7 +388,13 @@ pub fn build_ui(
     //        nxm_result_rx → DownloadQueue::enqueue → spawn_download
     #[cfg(feature = "net")]
     {
-        let api_key_nxm = initial_settings.network.nexus_api_key.clone();
+        // Clone the Arc here so the move closure below can take ownership.
+        let nxm_queue = std::sync::Arc::clone(nxm_queue);
+        // Read the API key from the OS secret store; fall back to the legacy
+        // plaintext field in case the `secrets` feature is disabled or the
+        // keyring is unavailable.
+        let api_key_nxm = mantle_core::secrets::get_nexus_api_key()
+            .unwrap_or_else(|| initial_settings.network.nexus_api_key_legacy.clone());
         let downloads_dir_nxm = initial_settings
             .paths
             .downloads_dir

@@ -14,9 +14,14 @@ workspace = true
 ## Adds `reqwest` (TLS via rustls). Must be opted-in explicitly; Mantle Manager
 ## builds and runs fully without this feature.
 net = ["dep:reqwest"]
+## Stores nexus_api_key in the OS secret store (GNOME Keyring / KWallet via D-Bus).
+## Default-on for normal builds; disable with --no-default-features for CI without D-Bus.
+default = ["secrets"]
+secrets = ["dep:keyring"]
 
 [dependencies]
 reqwest = { workspace = true, optional = true }
+keyring = { optional = true, version = "3" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

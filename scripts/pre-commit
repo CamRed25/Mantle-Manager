@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Mantle Manager pre-commit hook
+# Installed via: just install-hooks
+# Checks: format + clippy only (tests are a pre-merge step — see standards/BUILD_GUIDE.md §3.3)
+set -euo pipefail
+
+echo "pre-commit: checking format..."
+if ! cargo fmt --all -- --check 2>&1; then
+    echo ""
+    echo "ERROR: Formatting violations detected."
+    echo "Run 'just fmt' (or 'cargo fmt --all'), re-stage your changes, then commit again."
+    exit 1
+fi
+
+echo "pre-commit: running clippy..."
+if ! cargo clippy --workspace -- -D warnings 2>&1; then
+    echo ""
+    echo "ERROR: Clippy violations detected. Fix the warnings above before committing."
+    exit 1
+fi
+
+echo "pre-commit: OK"

@@ -126,6 +126,7 @@ pub struct ThemeEntry {
 /// A single key/value setting displayed in the plugin settings panel.
 ///
 /// Values are stringified for display; the core holds the real typed values.
+#[derive(Clone)]
 pub struct PluginSettingEntry {
     /// The setting's stable key (from `MantlePlugin::settings()`).
     pub key: String,
@@ -138,6 +139,7 @@ pub struct PluginSettingEntry {
 }
 
 /// Display snapshot for a single loaded Mantle plugin.
+#[derive(Clone)]
 pub struct PluginEntry {
     /// Plugin's stable ID string.
     pub id: String,

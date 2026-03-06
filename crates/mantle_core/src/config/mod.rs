@@ -186,10 +186,19 @@ pub struct PathSettings {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NetworkSettings {
-    /// Nexus Mods personal API key.  Empty string means no key is set.
+    /// Legacy plain-text storage of the Nexus Mods API key.
     ///
-    /// Never expose this value in log output — treat as a credential.
-    pub nexus_api_key: String,
+    /// This field is kept for **migration only**. On first launch after the
+    /// `secrets` feature was introduced, any non-empty value here is migrated
+    /// to the OS secret store (GNOME Keyring / KWallet) by
+    /// [`crate::secrets::migrate_key_from_toml`], then cleared and saved.
+    ///
+    /// New code must call [`crate::secrets::get_nexus_api_key`] instead of
+    /// reading this field directly.
+    ///
+    /// The TOML key is kept as `nexus_api_key` for backward compatibility.
+    #[serde(default, rename = "nexus_api_key")]
+    pub nexus_api_key_legacy: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -480,7 +489,7 @@ mod tests {
         assert!(s.ui.show_separator_colors);
         assert!(s.paths.mods_dir.is_none());
         assert!(s.paths.downloads_dir.is_none());
-        assert!(s.network.nexus_api_key.is_empty());
+        assert!(s.network.nexus_api_key_legacy.is_empty());
     }
 
     // ── TOML round-trip ───────────────────────────────────────────────────
@@ -501,7 +510,7 @@ mod tests {
         s.ui.theme = Theme::Dark;
         s.ui.compact_mod_list = true;
         s.paths.mods_dir = Some(PathBuf::from("/mnt/games/mods"));
-        s.network.nexus_api_key = "secret-key".to_string();
+        s.network.nexus_api_key_legacy = "secret-key".to_string();
 
         let toml_str = toml::to_string_pretty(&s).unwrap();
         let recovered: AppSettings = toml::from_str(&toml_str).unwrap();
@@ -642,7 +651,7 @@ mod tests {
 
         let mut original = AppSettings::default();
         original.ui.theme = Theme::Dark;
-        original.network.nexus_api_key = "test-key".to_string();
+        original.network.nexus_api_key_legacy = "test-key".to_string();
 
         original.save(&path).unwrap();
         let loaded = AppSettings::load_or_default(&path).unwrap();

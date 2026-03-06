@@ -56,6 +56,9 @@ compress-tools = "0.15.1"
 # Optional — net feature (declare optional = true in each crate that gates it)
 # rustls-tls avoids OpenSSL linkage issues in Flatpak; stream enables chunked downloads.
 reqwest = { version = "~0.11", default-features = false, features = ["rustls-tls", "json", "stream"] }
+# Optional — secrets feature: stores nexus_api_key in the OS secret store (GNOME Keyring / KWallet).
+# linux-secret-service-rt-tokio-crypto-rust: D-Bus Secret Service, tokio runtime, RustCrypto backend.
+keyring = { version = "~3" }
 # UUIDs for stable download job identity.
 uuid = { version = "1", features = ["v4"] }
 # Temporary files/directories used in tests.

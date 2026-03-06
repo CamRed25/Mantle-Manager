@@ -262,10 +262,12 @@ pub fn build(
                 return;
             }
 
-            // Load settings; require non-empty API key.
+            // Load the API key from the OS secret store; fall back to the
+            // legacy plain-text field for when the `secrets` feature is off.
             let settings =
                 AppSettings::load_or_default(&default_settings_path()).unwrap_or_default();
-            let api_key = settings.network.nexus_api_key.clone();
+            let api_key = mantle_core::secrets::get_nexus_api_key()
+                .unwrap_or_else(|| settings.network.nexus_api_key_legacy.clone());
             if api_key.is_empty() {
                 toast_overlay
                     .add_toast(adw::Toast::new("Set your Nexus API key in Settings first"));

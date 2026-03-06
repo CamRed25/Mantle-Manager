@@ -67,7 +67,7 @@ fn main() {
     {
         let nxm_queue_act = Arc::clone(&nxm_queue);
         app.connect_activate(move |app| {
-            window::build_ui(app, Arc::clone(&nxm_queue_act));
+            window::build_ui(app, &nxm_queue_act);
         });
     }
 

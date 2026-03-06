@@ -58,6 +58,17 @@ sudo apt install libgtk-4-dev libadwaita-1-dev
 sudo pacman -S gtk4 libadwaita
 ```
 
+### 1.5 Task Runner (just)
+
+```bash
+cargo install just
+```
+
+`just` encodes all build and verification recipes. See `justfile` at the workspace root.
+After cloning, run `just install-hooks` once to install the pre-commit hook (§3.4).
+
+---
+
 ### 1.4 libloot — Build from Source
 
 `libloot` is not available in most distribution package managers. Build from source:
@@ -171,13 +182,12 @@ cargo build --workspace --release
 ### 3.2 Check and Lint
 
 ```bash
-# Type check without producing binaries (faster than build)
+# Preferred: run all checks via just
+just check
+
+# Or individually:
 cargo check --workspace
-
-# Clippy — enforced lint level
 cargo clippy --workspace -- -D warnings
-
-# Formatting check
 cargo fmt --all -- --check
 ```
 
@@ -186,6 +196,11 @@ cargo fmt --all -- --check
 Run this before any merge:
 
 ```bash
+# Preferred: one-liner
+just check          # build + clippy + fmt-check + tests
+just check-no-net   # repeat without default features
+
+# Or manually (all steps must exit 0):
 # 1. Clean incremental build
 cargo build --workspace
 
@@ -205,7 +220,17 @@ cargo test --workspace
 cargo test -p mantle_core data::migrations
 ```
 
-All steps must exit 0.
+### 3.4 Pre-commit Hook
+
+Install once per clone:
+
+```bash
+just install-hooks
+```
+
+The hook (`scripts/pre-commit`) runs `cargo fmt --check` and
+`cargo clippy -- -D warnings` on every commit. The test suite is a pre-merge
+step (§3.3), not a commit-time step.
 
 ---
 

@@ -38,7 +38,7 @@ use mantle_core::{
     vfs,
 };
 
-use crate::state::{AppState, DownloadEntry, DownloadStatus, ModEntry, ProfileEntry, ThemeEntry};
+use crate::state::{AppState, DownloadEntry, DownloadStatus, ModEntry, PluginEntry, ProfileEntry, ThemeEntry};
 
 // ─── Cached game detection ───────────────────────────────────────────────────
 
@@ -62,6 +62,40 @@ fn load_game_state() -> Option<&'static mantle_core::game::GameInfo> {
         .as_ref()
 }
 
+// ─── Cached plugin entries ───────────────────────────────────────────────────
+
+/// Process-wide cache of the last successfully loaded plugin registry result.
+///
+/// Updated after every [`RefreshScope::Full`] load so that
+/// [`RefreshScope::ModsOnly`] refreshes (mod enable/disable events) can reuse
+/// the previous entries without re-scanning the plugin directory from disk.
+type PluginCache = (Vec<PluginEntry>, usize);
+
+static CACHED_PLUGINS: OnceLock<Arc<Mutex<PluginCache>>> = OnceLock::new();
+
+/// Return the process-wide mutable plugin cache, initialising it on first call.
+fn plugin_cache() -> &'static Arc<Mutex<PluginCache>> {
+    CACHED_PLUGINS.get_or_init(|| Arc::new(Mutex::new((vec![], 0))))
+}
+
+// ─── Refresh scope ────────────────────────────────────────────────────────────
+
+/// Controls which sub-loaders run on a given state refresh.
+///
+/// Passed through `resend_state` → `load_state` so event-triggered refreshes
+/// can skip expensive work that is irrelevant to the triggering change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RefreshScope {
+    /// Run all sub-loaders: profiles, mods + conflicts, plugin registry, themes,
+    /// downloads.  Used on startup, explicit reloads, and structural changes
+    /// (mod install, profile switch).
+    Full,
+    /// Re-query only the active profile's mod list and conflict scan; reuse
+    /// cached plugin entries and themes.  Used for `ModEnabled` / `ModDisabled`
+    /// events where only enabled flags changed — fastest refresh path.
+    ModsOnly,
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /// Trigger a one-shot state reload without starting a new subscription loop.
@@ -76,7 +110,7 @@ fn load_game_state() -> Option<&'static mantle_core::game::GameInfo> {
 /// # Parameters
 /// - `sender`: The sending end of a `std::sync::mpsc::channel::<AppState>`.
 pub fn trigger_reload(sender: Sender<AppState>) {
-    std::thread::spawn(move || resend_state(&sender));
+    std::thread::spawn(move || resend_state(RefreshScope::Full, &sender));
 }
 
 /// Spawn a background OS thread that loads the initial [`AppState`] from
@@ -108,7 +142,7 @@ pub fn trigger_reload(sender: Sender<AppState>) {
 pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
     std::thread::spawn(move || {
         // ── Initial state load ────────────────────────────────────────────
-        resend_state(&sender);
+        resend_state(RefreshScope::Full, &sender);
 
         // ── Subscribe to live events ──────────────────────────────────────
         // Each handler clones the sender and calls resend_state.
@@ -117,25 +151,27 @@ pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
         let s1 = sender.clone();
         let _sub_mod_installed =
             EventBus::subscribe(&event_bus, EventFilter::ModInstalled, move |_| {
-                resend_state(&s1);
+                resend_state(RefreshScope::Full, &s1);
             });
 
         let s2 = sender.clone();
         let _sub_mod_enabled =
             EventBus::subscribe(&event_bus, EventFilter::ModEnabled, move |_| {
-                resend_state(&s2);
+                // Only mod-enabled flags changed — skip plugin registry reload.
+                resend_state(RefreshScope::ModsOnly, &s2);
             });
 
         let s3 = sender.clone();
         let _sub_mod_disabled =
             EventBus::subscribe(&event_bus, EventFilter::ModDisabled, move |_| {
-                resend_state(&s3);
+                // Only mod-enabled flags changed — skip plugin registry reload.
+                resend_state(RefreshScope::ModsOnly, &s3);
             });
 
         let s4 = sender.clone();
         let _sub_profile_changed =
             EventBus::subscribe(&event_bus, EventFilter::ProfileChanged, move |_| {
-                resend_state(&s4);
+                resend_state(RefreshScope::Full, &s4);
             });
 
         // ── Keep thread alive ─────────────────────────────────────────────
@@ -151,7 +187,7 @@ pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
 
 // ─── Private implementation ───────────────────────────────────────────────────
 
-/// Re-run [`load_state`] and send the result over `sender`.
+/// Re-run [`load_state`] with the given `scope` and send the result over `sender`.
 ///
 /// Called both for the initial delivery (inside [`spawn`]) and from every
 /// event-bus subscription handler to push a fresh snapshot to the UI whenever
@@ -161,9 +197,10 @@ pub fn spawn(sender: Sender<AppState>, event_bus: Arc<EventBus>) {
 /// even if a transient DB read fails.
 ///
 /// # Parameters
+/// - `scope`:  Which sub-loaders to run (see [`RefreshScope`]).
 /// - `sender`: The sending end of the state MPSC channel.
-fn resend_state(sender: &Sender<AppState>) {
-    match load_state() {
+fn resend_state(scope: RefreshScope, sender: &Sender<AppState>) {
+    match load_state(scope) {
         Ok(state) => {
             if sender.send(state).is_err() {
                 tracing::warn!("state_worker: receiver dropped; state delivery skipped");
@@ -181,6 +218,11 @@ fn resend_state(sender: &Sender<AppState>) {
 /// the active profile's mod list.  Returns an error only if a critical read
 /// fails; absent files (first launch) produce an empty but valid state.
 ///
+/// On [`RefreshScope::ModsOnly`] the plugin registry is not re-scanned;
+/// cached entries from the last [`RefreshScope::Full`] run are reused instead
+/// so enabling or disabling a single mod does not reload every `.so`/`.rhai`
+/// file from disk.
+///
 /// # Returns
 /// Populated [`AppState`] on success.
 ///
@@ -188,7 +230,7 @@ fn resend_state(sender: &Sender<AppState>) {
 /// Returns an error if the database cannot be opened or schema migrations
 /// fail.  Individual query errors are treated as empty results rather than
 /// propagated, to keep the UI functional even with partial DB corruption.
-fn load_state() -> anyhow::Result<AppState> {
+fn load_state(scope: RefreshScope) -> anyhow::Result<AppState> {
     // ── Database ──────────────────────────────────────────────────────────
     let db_path = default_db_path();
     if let Some(parent) = db_path.parent() {
@@ -275,17 +317,34 @@ fn load_state() -> anyhow::Result<AppState> {
         (None, String::new(), String::new())
     };
 
-    // ── Plugin registry ───────────────────────────────────────────────────
+    // ── Plugin registry ──────────────────────────────────────────────────────
+    // On ModsOnly scope the plugin directory is not re-scanned; cached entries
+    // from the last Full load are reused so enabling/disabling a mod doesn't
+    // reload every .so/.rhai file from disk unnecessarily.
     let profile_names: Vec<String> = all_profiles.iter().map(|p| p.name.clone()).collect();
-    let (plugin_entries, plugin_count) =
-        load_plugins(&db, active_profile_id, &active_profile_name, &profile_names, first_game);
+    let (plugin_entries, plugin_count) = match scope {
+        RefreshScope::Full => {
+            let result =
+                load_plugins(&db, active_profile_id, &active_profile_name, &profile_names, first_game);
+            // Persist result for future ModsOnly refreshes.
+            if let Ok(mut cache) = plugin_cache().lock() {
+                *cache = result.clone();
+            }
+            result
+        }
+        RefreshScope::ModsOnly => {
+            // Reuse the cached plugin snapshot from the last Full load.
+            // Falls back to empty on Mutex poison (should never happen).
+            plugin_cache().lock().map_or_else(|_| (vec![], 0), |c| c.clone())
+        }
+    };
 
     Ok(AppState {
         steam_app_id,
         game_name,
         // Read the game version from the Steam ACF manifest or PE resource.
         game_version: first_game
-            .map(|g| mantle_core::game::version::read_game_version(g))
+            .map(mantle_core::game::version::read_game_version)
             .unwrap_or_default(),
         launch_target,
         active_profile: active_profile_name,
@@ -421,6 +480,9 @@ fn load_downloads_snapshot(db: &mantle_core::data::Database) -> Vec<DownloadEntr
 /// - `status`:      Status string from the `downloads` table.
 /// - `progress`:    Stored progress value `[0.0, 1.0]`.
 /// - `total_bytes`: Stored total byte count, if known.
+// `bytes_done` reconstruction uses f64 arithmetic on u64 byte counts; the
+// sub-byte precision loss and sign assumptions are intentional approximations.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
 fn persisted_status_to_download_status(
     status: &str,
     progress: f64,

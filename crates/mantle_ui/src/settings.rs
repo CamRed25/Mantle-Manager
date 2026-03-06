@@ -451,13 +451,42 @@ fn build_network_page(shared: Rc<RefCell<AppSettings>>, path: PathBuf) -> adw::P
         .build();
 
     // ── API key ───────────────────────────────────────────────────────────
+    //
+    // The key is stored in the OS secret store (GNOME Keyring / KWallet) when
+    // the `secrets` feature is enabled.  On first launch after migration, any
+    // existing plain-text key in settings.toml is moved to the keyring here.
     let key_row = adw::PasswordEntryRow::builder().title("API key").build();
     // show_apply_button is an EntryRow property inherited by PasswordEntryRow.
     key_row.set_show_apply_button(true);
-    key_row.set_text(&shared.borrow().network.nexus_api_key);
+    {
+        // One-time migration: if a legacy plaintext key exists in settings.toml,
+        // move it to the keyring now.
+        let legacy = shared.borrow().network.nexus_api_key_legacy.clone();
+        if !legacy.is_empty() {
+            if let Err(e) =
+                mantle_core::secrets::migrate_key_from_toml(&legacy, &path)
+            {
+                tracing::warn!("API key migration failed: {e}");
+            } else {
+                shared.borrow_mut().network.nexus_api_key_legacy.clear();
+            }
+        }
+    }
+    // Populate display from the secret store (falls back to empty string).
+    key_row.set_text(
+        &mantle_core::secrets::get_nexus_api_key().unwrap_or_default(),
+    );
     {
         key_row.connect_apply(move |row| {
-            shared.borrow_mut().network.nexus_api_key = row.text().to_string();
+            let new_key = row.text().to_string();
+            if let Err(e) = mantle_core::secrets::set_nexus_api_key(&new_key) {
+                tracing::warn!("Failed to save API key to secret store: {e}");
+            }
+            // Ensure the legacy field stays empty so it is not re-written.
+            {
+                let mut s = shared.borrow_mut();
+                s.network.nexus_api_key_legacy.clear();
+            }
             save_settings(&shared.borrow(), &path);
         });
     }

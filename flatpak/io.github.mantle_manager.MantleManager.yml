@@ -43,11 +43,18 @@ finish-args:
   # Allow the NXM deep-link handler to receive URI open requests
   - --talk-name=org.freedesktop.Application
 
+  # OS secret store — required by the `secrets` feature (GNOME Keyring / KWallet)
+  # for storing the Nexus Mods API key outside of plain-text settings.toml.
+  # Note: --socket=session-bus above already grants unrestricted session-bus
+  # access; this entry documents the specific service used by mantle_core::secrets.
+  - --talk-name=org.freedesktop.Secrets
+
 modules:
   - name: mantle-manager
     buildsystem: simple
     build-commands:
-      # Build the release binary with the net feature enabled
+      # Build the release binary with networking and OS secret store support.
+      # `secrets` is in the default feature set; `net` must be opted-in explicitly.
       - cargo build --release --features net --manifest-path Cargo.toml
       - install -Dm755 target/release/mantle-manager /app/bin/mantle-manager
 
