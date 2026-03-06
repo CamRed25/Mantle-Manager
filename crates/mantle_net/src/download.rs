@@ -127,3 +127,146 @@ pub fn build_client() -> Result<Client, NetError> {
         .build()
         .map_err(NetError::Http)
 }
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    };
+
+    use tempfile::tempdir;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    use super::*;
+
+    /// Spin up a one-shot TCP listener that serves a single HTTP/1.1 response
+    /// and returns the URL to connect to.
+    ///
+    /// The server task is spawned on the current Tokio runtime and handles
+    /// exactly one connection before exiting.
+    async fn serve_once(body: &'static [u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock listener");
+        let port = listener
+            .local_addr()
+            .expect("local_addr")
+            .port();
+        let body_len = body.len();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            // Drain the request so the client doesn't get a connection-reset.
+            let mut req_buf = [0u8; 4096];
+            let _ = stream.read(&mut req_buf).await;
+            let header = format!(
+                "HTTP/1.1 200 OK\r\n\
+                 Content-Length: {body_len}\r\n\
+                 Content-Type: application/octet-stream\r\n\
+                 Connection: close\r\n\r\n"
+            );
+            stream
+                .write_all(header.as_bytes())
+                .await
+                .expect("write header");
+            stream.write_all(body).await.expect("write body");
+        });
+
+        format!("http://127.0.0.1:{port}/test.bin")
+    }
+
+    /// Serve a single HTTP response with the given status code and optional body.
+    async fn serve_error(status: u16) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock listener");
+        let port = listener.local_addr().expect("local_addr").port();
+
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept");
+            let mut req_buf = [0u8; 4096];
+            let _ = stream.read(&mut req_buf).await;
+            let reason = if status == 404 { "Not Found" } else { "Error" };
+            let body = reason.as_bytes();
+            let resp = format!(
+                "HTTP/1.1 {status} {reason}\r\n\
+                 Content-Length: {}\r\n\
+                 Connection: close\r\n\r\n{reason}",
+                body.len()
+            );
+            stream.write_all(resp.as_bytes()).await.expect("write");
+        });
+
+        format!("http://127.0.0.1:{port}/missing.bin")
+    }
+
+    /// `download_file` streams a file, fires progress callbacks, writes the
+    /// correct bytes to disk, and cleans up the `.tmp` file.
+    #[tokio::test]
+    async fn download_file_streams_and_renames() {
+        const BODY: &[u8] = b"hello from mantle download smoke test";
+        let url = serve_once(BODY).await;
+        let dir = tempdir().expect("tempdir");
+        let dest = dir.path().join("test.bin");
+        let client = build_client().expect("build client");
+
+        // Track cumulative progress via atomic so the closure can be Fn.
+        let bytes_seen = Arc::new(AtomicU64::new(0));
+        let bytes_seen_clone = Arc::clone(&bytes_seen);
+
+        let total_written = download_file(
+            &url,
+            &dest,
+            move |ev| {
+                let DownloadEvent::Progress { downloaded, .. } = ev;
+                bytes_seen_clone.store(downloaded, Ordering::Relaxed);
+            },
+            &client,
+        )
+        .await
+        .expect("download_file should succeed");
+
+        assert_eq!(total_written, BODY.len() as u64, "byte count matches");
+        assert_eq!(
+            std::fs::read(&dest).expect("read dest"),
+            BODY,
+            "file content matches"
+        );
+        assert_eq!(
+            bytes_seen.load(Ordering::Relaxed),
+            BODY.len() as u64,
+            "progress callback reached full byte count"
+        );
+        assert!(
+            !dest.with_extension("tmp").exists(),
+            "temp file must be cleaned up"
+        );
+    }
+
+    /// `download_file` returns `NetError::Status` when the server responds
+    /// with a non-2xx status code.
+    #[tokio::test]
+    async fn download_file_errors_on_404() {
+        let url = serve_error(404).await;
+        let dir = tempdir().expect("tempdir");
+        let dest = dir.path().join("missing.bin");
+        let client = build_client().expect("build client");
+
+        let result = download_file(&url, &dest, |_| {}, &client).await;
+
+        assert!(
+            matches!(result, Err(NetError::Status { status: 404, .. })),
+            "expected Status(404), got: {result:?}"
+        );
+    }
+
+    /// `build_client` constructs a valid reqwest client without panicking.
+    #[test]
+    fn build_client_succeeds() {
+        build_client().expect("client builder should succeed");
+    }
+}
