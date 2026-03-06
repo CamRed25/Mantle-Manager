@@ -1,11 +1,16 @@
 # Mantle Manager
 
+[![CI](https://github.com/mantle-manager/mantle-manager/actions/workflows/ci.yml/badge.svg)](https://github.com/mantle-manager/mantle-manager/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Flatpak](https://img.shields.io/badge/Flatpak-ready-brightgreen)](flatpak/io.github.mantle_manager.MantleManager.yml)
+[![Rust](https://img.shields.io/badge/Rust-stable-orange.svg)](https://www.rust-lang.org)
+
 A ground-up Linux-native mod manager for Bethesda games running through Steam and Proton. Built entirely in Rust with a GTK4/libadwaita UI. No Python layer, no compatibility shim — every component is purpose-built for Linux.
 
 > [!WARNING]
 > **Mantle Manager is not in a usable state.** Core systems are still under active development and the application is not ready for actual mod management. It is strongly recommended that you do not attempt to use it on a real game installation at this time.
 
-**Status:** Active development — core mod management, VFS overlay, conflict resolution, BSA extraction, and diagnostics are implemented. UI is functional. Network and plugin ecosystem features are deferred.
+**Status:** `v0.1.0-alpha` — core mod management, VFS overlay, conflict resolution, BSA extraction, diagnostics, plugin system, download queue persistence, NXM deep-link handling, and game version detection are implemented. UI is functional. See [CHANGELOG.md](CHANGELOG.md) for a full list of additions.
 
 ---
 
