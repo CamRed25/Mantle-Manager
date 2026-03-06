@@ -20,8 +20,6 @@
 //! # Deferred fields
 //! The following [`AppState`] fields are still incomplete.
 //! See futures.md "State worker detection" for implementation notes.
-//! - `game_version` — requires reading the game EXE or Steam manifest.
-//! - `launch_target` — currently mirrors `game_name`; proper xSE detection deferred.
 //! - `downloads` — the download queue lives in-memory; no DB persistence yet.
 //!
 //! [`EventBus`]: mantle_core::plugin::EventBus
@@ -261,14 +259,18 @@ fn load_state() -> anyhow::Result<AppState> {
     let first_game = load_game_state();
 
     let (steam_app_id, game_name, launch_target) = if let Some(g) = first_game {
-        (
-            Some(g.steam_app_id),
-            g.name.clone(),
-            // Use the game's short display name as the launch target until
-            // xSE / custom launch-target detection is added.
-            // See futures.md "State worker detection".
-            g.name.clone(),
-        )
+        // Detect SKSE/F4SE/etc. and use it as the launch target when installed.
+        // Only available when the `net` feature is enabled (SKSE module is
+        // gated on net).  Falls back to the game display name when off.
+        #[cfg(feature = "net")]
+        let launch_target = mantle_core::skse::config_for_game(g.kind)
+            .and_then(|cfg| mantle_core::skse::installed_version(&g.install_path, cfg))
+            .map(|_| format!("{} via SKSE", g.name))
+            .unwrap_or_else(|| g.name.clone());
+        #[cfg(not(feature = "net"))]
+        let launch_target = g.name.clone();
+
+        (Some(g.steam_app_id), g.name.clone(), launch_target)
     } else {
         (None, String::new(), String::new())
     };
@@ -281,9 +283,10 @@ fn load_state() -> anyhow::Result<AppState> {
     Ok(AppState {
         steam_app_id,
         game_name,
-        // Version string requires reading the game EXE or a manifest;
-        // deferred — see futures.md "State worker detection".
-        game_version: String::new(),
+        // Read the game version from the Steam ACF manifest or PE resource.
+        game_version: first_game
+            .map(|g| mantle_core::game::version::read_game_version(g))
+            .unwrap_or_default(),
         launch_target,
         active_profile: active_profile_name,
         mod_count,

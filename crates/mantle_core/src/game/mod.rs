@@ -25,6 +25,7 @@ pub mod ini;
 pub mod proton;
 pub mod registry;
 pub mod steam;
+pub mod version;
 
 pub use ini::{apply_profile_ini, snapshot_profile_ini, GameIni};
 pub use registry::{load_system_reg, load_user_reg, wine_c_drive, RegistryHive, RegistryValue};
